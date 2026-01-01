@@ -41,6 +41,7 @@
 (require 's)
 (require 'ht)
 (require 'cl-lib)
+(require 'project)
 
 (require 'markdown-mode)
 (require 'elgrep)
@@ -50,21 +51,6 @@
 
 (defvar obsidian--relative-path-length nil
   "Length of path of `obisidan-directory' used to calculate file relative paths.")
-
-(defcustom obsidian-directory ""
-  "Path to Obsidian Notes vault."
-  :group 'obsidian
-  :type 'directory
-  :initialize #'custom-initialize-reset
-  :set (lambda (symbol value)
-         (let ((full-path (expand-file-name value)))
-           (if (file-exists-p full-path)
-               (progn
-                 (message "Setting %s to %s" symbol full-path)
-                 (set-default symbol full-path)
-                 (setq obsidian--relative-path-length
-                       (length (file-name-as-directory full-path))))
-             (user-error (format "Directory %s doesn't exist" full-path))))))
 
 (defcustom obsidian-inbox-directory nil
   "Subdir to create notes using `obsidian-capture'."
@@ -90,7 +76,7 @@ Default is the inbox directory"
 
 (defcustom obsidian-excluded-directories nil
   "List of directories to exclude from Obsidian file searches.
-Each directory should be a full path relative to `obsidian-directory`."
+Each directory should be a full path relative to vault."
   :type '(repeat directory))
 
 (defcustom obsidian-create-unfound-files-in-inbox t
@@ -147,20 +133,6 @@ of `dirctory-files'."
 (if (< emacs-major-version 28)
     (advice-add 'directory-files :around #'obsidian--directory-files-pre28))
 
-;;;###autoload
-(defun obsidian-change-vault (&optional path)
-  "Set vault directory to PATH and repopulate vault cache.
-When run interactively asks user to specify the path."
-  (interactive)
-  (let* ((raw-path (or (and path (expand-file-name path))
-                       (read-directory-name "Specify path to Obsidian vault: ")))
-         (final-path (expand-file-name raw-path)))
-    (if (file-exists-p final-path)
-        (progn
-          (customize-set-value 'obsidian-directory final-path)
-          (message "Obsidian vault set to: %s" obsidian-directory)
-          (obsidian-rescan-cache))
-      (user-error (format "Directory %s doesn't exist" final-path)))))
 
 (define-minor-mode obsidian-mode
   "Toggle minor `obsidian-mode' on and off.
@@ -210,10 +182,14 @@ characters of a tag.
 (defconst obsidian-markdown-link-regex "\\[[[:graph:][:blank:]]+\\]\([[:graph:][:blank:]]*\)"
   "Regex pattern used to find markdown links.")
 
-(defvar obsidian-vault-cache nil
+(defvar obsidian--vault-cache-plist nil
   "Cache for Obsidian files.
 
-The cache is a hashmap with the following structure
+We have a cache per obsidian vault, in a plist:
+
+(vault-root1 cache1 vault-root2 cache2)
+
+Where the cache is a hashmap with the following structure
 {<filepath>: {tags: <list-of-tags>
               aliases: <list-of-aliases>}}
               links: <list-of-link-lists>}}
@@ -226,6 +202,27 @@ Each link list contains the following as returned by markdown-link-at-pos:
   4. reference label
   5. title text
   6. bang (nil or \"!\")")
+
+
+(defun obsidian--vault-cache (&optional vault)
+  "Get the cache for VAULT.
+
+If nil, get cache for current buffer."
+  (plist-get obsidian--vault-cache-plist
+             (or vault (obsidian-vault))
+             'string=))
+
+
+(defun obsidian--init-vault-cache (file-count &optional vault)
+  "Create empty cache for VAULT."
+  (let ((cache (make-hash-table :test 'equal :size file-count)))
+    (setq obsidian--vault-cache-plist
+          (plist-put obsidian--vault-cache-plist
+                     (or vault (obsidian-vault))
+                     cache
+                     'string=))
+    cache))
+
 
 (defvar obsidian--tags-map nil "Hash table with tags as keys and list of files as values.")
 
@@ -245,10 +242,10 @@ Each link list contains the following as returned by markdown-link-at-pos:
 (defun obsidian--set-tags (file tag-list)
   "Set list TAG-LIST to FILE in files cache."
   (when tag-list
-    (if-let ((attr-map (gethash file obsidian-vault-cache)))
+    (if-let ((attr-map (gethash file (obsidian--vault-cache))))
         (puthash 'tags tag-list attr-map)
       (message "Unable to add tags for %s:\nAvailable keys:\n%s"
-               file (s-join "\n" (hash-table-keys obsidian-vault-cache))))))
+               file (s-join "\n" (hash-table-keys (obsidian--vault-cache)))))))
 
 (defun obsidian--set-aliases (file alias-list)
   "Set list ALIAS-LIST to FILE in files cache."
@@ -262,16 +259,16 @@ Each link list contains the following as returned by markdown-link-at-pos:
           (when stale-aliases
             (seq-map (lambda (alias) (obsidian--remove-alias alias)) stale-aliases)))
       (seq-map (lambda (alias) (obsidian--add-alias alias file)) alias-list))
-    (when-let ((attr-map (gethash file obsidian-vault-cache)))
+    (when-let ((attr-map (gethash file (obsidian--vault-cache))))
       (puthash 'aliases alias-list attr-map))))
 
 (defun obsidian--set-links (file links-map)
   "Set table LINKS-MAP to FILE in files cache."
   (when links-map
-    (if-let ((attr-map (gethash file obsidian-vault-cache)))
+    (if-let ((attr-map (gethash file (obsidian--vault-cache))))
         (puthash 'links links-map attr-map)
       (message "Unable to add links for %s:\nAvailable keys:\n%s"
-               file (s-join "\n" (hash-table-keys obsidian-vault-cache))))))
+               file (s-join "\n" (hash-table-keys (obsidian--vault-cache)))))))
 
 (defun obsidian--add-alias (alias file)
   "Add ALIAS as key to `obsidian--aliases-map' with FILE as value."
@@ -290,7 +287,7 @@ Each link list contains the following as returned by markdown-link-at-pos:
   (hash-table-keys obsidian--aliases-map))
 
 (defun obsidian-user-directory-p (&optional file)
-  "Return t if FILE is a user defined directory inside `obsidian-directory'."
+  "Return t if FILE is a user defined directory."
   (and (file-directory-p file)
        (obsidian-not-dot-obsidian-p file)
        (obsidian-not-trash-p file)
@@ -316,19 +313,41 @@ Each link list contains the following as returned by markdown-link-at-pos:
       (s-starts-with-p (expand-file-name excluded-dir) file))
     obsidian-excluded-directories)))
 
+
+(defun obsidian-try-project (dir)
+  "Project.el integration for obsidian.
+
+Will detect obsidian vault by the .obsidian folder."
+  (when-let ((root (locate-dominating-file dir ".obsidian")))
+    `(obsidian obsidian ,root)))
+
+
+(cl-defmethod project-root ((project (head obsidian)))
+  "Return root folder for PROJECT."
+  (nth 2 project))
+
+
+(defun obsidian-vault ()
+  "Return vault directory for current buffer."
+  (when-let* ((proj (project-current))
+              (is-obsidian (eq 'obsidian (car proj))))
+    (expand-file-name (project-root proj))))
+
+
 (defun obsidian-file-p (&optional file)
   "Return t if FILE is an obsidian.el file, nil otherwise.
 
 If FILE is not specified, use the current buffer's file-path.
-FILE is an Org-roam file if:
-- It's located somewhere under `obsidian-directory
+FILE is an obsidian file if:
+- It's located under a root folder that has a .obsidian folder
 - It is a markdown .md file
 - Is not a dot file or, if `obsidian-include-hidden-files' is t, then:
   - It is not in .trash
   - It is not an Emacs temp file"
   (-when-let* ((raw-path (or file (buffer-file-name (buffer-base-buffer))))
                (path (expand-file-name raw-path))
-               (in-vault (s-starts-with-p obsidian-directory path))
+               (project (project-current))
+               (in-vault (eq 'obsidian (car project)))
                (md-ext (s-ends-with-p ".md" path))
                (not-dot-file (or obsidian-include-hidden-files
                                  (not (obsidian-dot-file-p path))))
@@ -339,20 +358,20 @@ FILE is an Org-roam file if:
     t))
 
 (defun obsidian-file-relative-name (f)
-  "Take file name F and return relative path for `obsidian-directory'.
+  "Take file name F and return relative path for vault.
 
 The call to `substring' is much faster than a call to `file-relative-name',
 and as the DIRECTORY argument of `file-relative-name' is always the constant
-`obsidian-directory', the use of `substring' with the FROM argument set to the
-string length of `obsidian-directory' should be equivalent, as long as F is
+`', the use of `substring' with the FROM argument set to the
+string length of `(obsidian-vault)' should be equivalent, as long as F is
 always a full absolute path."
-  (if (s-starts-with-p obsidian-directory f)
+  (if (s-starts-with-p (obsidian-vault) f)
       (substring f obsidian--relative-path-length)
     f))
 
 (defun obsidian-expand-file-name (f)
-  "Take file F relative to `obsidian-directory' and return absolute path."
-  (expand-file-name f obsidian-directory))
+  "Take file F relative to vault and return absolute path."
+  (expand-file-name f (obsidian-vault)))
 
 (defun obsidian-file-to-absolute-path (file)
   "Return a full file path for FILE.
@@ -367,12 +386,12 @@ found is returned.  If no matches are found, the original FILE is returned."
 
 (defun obsidian-files ()
   "Lists all Obsidian Notes files that are not in trash."
-  (when obsidian-vault-cache
-    (hash-table-keys obsidian-vault-cache)))
+  (when (obsidian--vault-cache)
+    (hash-table-keys (obsidian--vault-cache))))
 
 (defun obsidian-directories ()
   "Lists all Obsidian sub folders."
-  (->> (directory-files-recursively obsidian-directory "" t)
+  (->> (directory-files-recursively (obsidian-vault) "" t)
        (-filter #'obsidian-user-directory-p)))
 
 (defun obsidian-remove-front-matter-from-string (s)
@@ -510,7 +529,7 @@ markdown-link-at-pos:
 
 (defun obsidian-tags-hashtable ()
   "Hashtable with each tags as the keys and list of file path as the values."
-  (when obsidian-vault-cache
+  (when (obsidian--vault-cache)
 
     (let ((obsidian--tags-map (make-hash-table :test 'equal)))
       ;; loop through files cache to get file/tag list for each file
@@ -528,7 +547,7 @@ markdown-link-at-pos:
                                   (puthash tag (list (obsidian-file-relative-name file))
                                            obsidian--tags-map))))
                             (gethash 'tags obsidian--file-metadata))))
-               obsidian-vault-cache)
+               (obsidian--vault-cache))
       (maphash (lambda (k v)
                  (puthash k (-sort 'string-lessp (-distinct v)) obsidian--tags-map))
                obsidian--tags-map)
@@ -537,12 +556,12 @@ markdown-link-at-pos:
 (defun obsidian-tags ()
   "List of Obsidian Notes tags generated by obsidian.el.
 Tags in the list will NOT have a leading hashtag (#)."
-  (when obsidian-vault-cache
+  (when (obsidian--vault-cache)
     (-distinct
      (remove nil
              (-mapcat (lambda (val-map)
                         (gethash 'tags val-map))
-                      (hash-table-values obsidian-vault-cache))))))
+                      (hash-table-values (obsidian--vault-cache)))))))
 
 (defun obsidian--buffer-metadata (&optional parent-file)
   "Find the tags, aliases, and links in the current buffer and return as hashtable.
@@ -587,7 +606,7 @@ If file is not specified, the current buffer will be used."
 
 (defun obsidian--files-on-disk()
   "Return a list of all obsidian files in the vault directory."
-  (let ((file-paths (directory-files-recursively obsidian-directory "\.*$")))
+  (let ((file-paths (directory-files-recursively (obsidian-vault) "\.*$")))
     (-filter #'obsidian-file-p file-paths)))
 
 (defun obsidian-rescan-buffer ()
@@ -600,17 +619,16 @@ If file is not specified, the current buffer will be used."
 (defun obsidian-rescan-cache ()
   "Create an empty cache and populate with files, tags, aliases, and links."
   (interactive)
-  ;; This is used to ensure that obsidian-directory was properly initialized
-  (customize-set-variable 'obsidian-directory obsidian-directory)
   (let* ((obs-files (obsidian--files-on-disk))
-         (file-count (length obs-files)))
+         (file-count (length obs-files))
+         (cache (obsidian--init-vault-cache file-count)))
     ;; Clear existing metadata
     (setq obsidian--aliases-map (make-hash-table :test 'equal))
     (setq obsidian--backlinks-alist (make-hash-table :test 'equal))
     (setq obsidian--jump-list nil)
-    (setq obsidian-vault-cache (make-hash-table :test 'equal :size file-count))
+    
     (seq-map (lambda (file)
-               (ht-set obsidian-vault-cache file (make-hash-table :test 'equal :size 3)))
+               (ht-set cache file (make-hash-table :test 'equal :size 3)))
              obs-files)
     ;; Repopulate metadata
     (dolist-with-progress-reporter
@@ -640,7 +658,7 @@ that was triggered by the `after-save-hook'.  We have no way to distinguish
 this from a file modified outside of obsidian.el, so we'll re-process
 them all just in case."
   (interactive)
-  (if (or (not (boundp 'obsidian-vault-cache)) (not obsidian-vault-cache))
+  (if (not (obsidian--vault-cache))
       (obsidian-rescan-cache)
     (-let* ((cached (obsidian-files))
             (ondisk (obsidian--files-on-disk))
@@ -677,7 +695,7 @@ Returns a file path relative to the obsidian vault."
       f
     ;; (let* ((obs-path (obsidian-expand-file-name f)))
     (let* ((obs-path (obsidian-file-to-absolute-path f)))
-      (if (ht-get obsidian-vault-cache obs-path)
+      (if (ht-get (obsidian--vault-cache) obs-path)
           ;; associated file is in cache; return relative file path f
           f
         ;; file is not being tracked; create it if necessary
@@ -690,7 +708,7 @@ Returns a file path relative to the obsidian vault."
 TOGGLE-PATH is a boolean that will toggle the behavior of
 `obsidian-links-use-vault-path' for this single link insertion."
   (let* ((all-files (->> (obsidian-files)
-                         (-map (lambda (f) (file-relative-name f obsidian-directory)))))
+                         (-map (lambda (f) (file-relative-name f (obsidian-vault))))))
          (region (when (use-region-p)
                    (buffer-substring-no-properties (region-beginning) (region-end))))
          (chosen-file (completing-read "Link: " all-files))
@@ -807,7 +825,7 @@ Optional argument ARG word to complete."
 In the `obsidian-inbox-directory' if set otherwise in `obsidian-directory' root."
   (interactive)
   (let* ((title (read-from-minibuffer "Title: "))
-         (filename (s-concat obsidian-directory "/" obsidian-inbox-directory "/" title ".md"))
+         (filename (s-concat (obsidian-vault) "/" obsidian-inbox-directory "/" title ".md"))
          (clean-filename (s-replace "//" "/" filename)))
     (find-file (expand-file-name clean-filename) t)
     (save-buffer)))
@@ -820,7 +838,7 @@ Note is created in the `obsidian-daily-notes-directory' if set, or in
 `obsidian-inbox-directory' if set, or finally n `obsidian-directory' root."
   (interactive)
   (let* ((title (format-time-string "%Y-%m-%d"))
-         (filename (s-concat obsidian-directory "/" obsidian-daily-notes-directory "/" title ".md"))
+         (filename (s-concat (obsidian-vault) "/" obsidian-daily-notes-directory "/" title ".md"))
          (clean-filename (s-replace "//" "/" filename)))
     (find-file (expand-file-name clean-filename) t)
     (save-buffer)
@@ -828,8 +846,8 @@ Note is created in the `obsidian-daily-notes-directory' if set, or in
                obsidian-daily-note-template
                (eq (buffer-size) 0))
       (obsidian-apply-template
-       (s-concat obsidian-directory "/"
-                 obsidian-templates-directory "/"
+       (f-join (obsidian-vault)
+                 obsidian-templates-directory
                  obsidian-daily-note-template))
       (save-buffer))))
 
@@ -860,16 +878,18 @@ Note is created in the `obsidian-daily-notes-directory' if set, or in
 
 (defun obsidian-add-file (file)
   "Add a FILE to the files cache and update tags and aliases for the file."
-  (let ((file (expand-file-name file)))
-    (when (not (gethash file obsidian-vault-cache))
-      (puthash file (make-hash-table :test 'equal :size 3) obsidian-vault-cache))
+  (let ((file (expand-file-name file))
+        (cache (obsidian--vault-cache)))
+    (when (not (gethash file cache))
+      (puthash file (make-hash-table :test 'equal :size 3)
+               cache))
     (obsidian-update-file-metadata file)))
 
 (defun obsidian-remove-file (file)
   "Remove FILE from the files cache and update tags and aliases accordingly."
   (let ((file (expand-file-name file)))
     (-map #'obsidian--remove-alias (obsidian--mapped-aliases file))
-    (remhash file obsidian-vault-cache)))
+    (remhash file (obsidian--vault-cache))))
 
 (defun obsidian--update-on-save ()
   "Used as a hook to update the vault cache when a file is saved."
@@ -918,22 +938,22 @@ If the file include directories in its path, we create the file relative to
          (filename (cond
                     ;; If relative path includes a '/', use vault root
                     ((s-contains-p "/" f)
-                     (s-concat obsidian-directory "/" f))
+                     (f-join (obsidian-vault) f))
                     ;; Create file in inbox if appropriate
                     ((and obsidian-create-unfound-files-in-inbox
                           obsidian-inbox-directory)
-                     (s-concat obsidian-directory "/"
-                               obsidian-inbox-directory "/" f))
+                     (f-join (obsidian-vault)
+                               obsidian-inbox-directory f))
                     ;; If we're in a file buffer, create new file in same directory
                     (buffer-file-name
                      (let ((rel-path (-> (buffer-file-name)
                                          file-name-directory
                                          obsidian-file-relative-name
                                          (concat f))))
-                       (s-concat obsidian-directory "/" rel-path)))
+                       (f-join (obsidian-vault) rel-path)))
                     ;; Else, create in the vault root
                     (t
-                     (s-concat obsidian-directory "/" f))))
+                     (f-join (obsidian-vault) f))))
          (cleaned (s-replace "//" "/" filename)))
     (when (not (f-exists-p cleaned))
       (f-mkdir-full-path (f-dirname cleaned))
@@ -1093,7 +1113,7 @@ See `markdown-follow-link-at-point' and `markdown-follow-wiki-link-at-point'."
 
 (defun obsidian--grep (re)
   "Find RE in the Obsidian vault."
-  (elgrep obsidian-directory "\.md" re
+  (elgrep (obsidian-vault) "\.md" re
           :recursive t
           :case-fold-search t
           :exclude-file-re (if obsidian-include-hidden-files "~" "^\\.\\|~")
@@ -1165,7 +1185,7 @@ The files cache has the following structure:
             (when (equal link targ)
               (puthash host info resp)))
           lmap)))
-     obsidian-vault-cache)
+     (obsidian--vault-cache))
     resp))
 
 ;;;###autoload
@@ -1482,6 +1502,7 @@ _s_earch by expr.   _u_pdate tags/alises etc.
 (define-globalized-minor-mode global-obsidian-mode obsidian-mode obsidian-enable-minor-mode)
 
 (add-hook 'after-save-hook #'obsidian--update-on-save)
+(add-hook 'project-find-functions #'obsidian-try-project)
 
 ;;;###autoload
 (define-minor-mode obsidian-backlinks-mode
