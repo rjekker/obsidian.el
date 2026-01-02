@@ -14,6 +14,10 @@ lint:
 test:
 	eldev -C --unstable -T test
 
+.PHONY: test-emacs28
+test-emacs28:
+	eldev docker 28 test
+
 docs:
 	make -C doc all
 
