@@ -38,6 +38,17 @@
   "Return t if FILE exists in vault cache."
   (if (ht-get (obsidian--vault-cache) file) t))
 
+(defmacro obsidian-test--in-test-dir (&rest body)
+  `(let ((default-directory ,obsidian--test-dir))
+     ,@body))
+
+(defmacro obsidian-test--in-test-dir-with-cache (&rest body)
+  `(let ((default-directory ,obsidian--test-dir))
+     (obsidian-rescan-cache)
+     ,@body))
+
+
+
 (describe "check vault location"
           (it "is correctly detected"
               (let ((default-directory obsidian--test-dir))
@@ -79,415 +90,388 @@
                           (expect  (obsidian-vault) :to-be nil)))))
 
 (describe "check ignore directories function"
-          (after-all (setq obsidian-excluded-directories nil))
           (it "obsidian-not-in-excluded-directory-p with a list of directories"
-              (let ((file (concat obsidian--test-dir "/inbox/2022-07-24.md")))
+              (let ((file (f-join obsidian--test-dir "inbox/2022-07-24.md"))
+                    obsidian-excluded-directories)
                 (expect (file-exists-p file) :to-equal t)
-                (expect (obsidian-not-in-excluded-directory-p file) :to-equal t)
-                (setq obsidian-excluded-directories
-                      (cons (concat obsidian--test-dir "/subdir") obsidian-excluded-directories))
-                (expect (obsidian-not-in-excluded-directory-p file) :to-equal t)
-                (setq obsidian-excluded-directories
-                      (cons (concat obsidian--test-dir "/inbox") obsidian-excluded-directories))
-                (expect (obsidian-not-in-excluded-directory-p file) :to-equal nil))))
+                (expect (obsidian-not-in-excluded-directory-p file) :to-be t)
+                (let (( obsidian-excluded-directories
+                        (cons (concat obsidian--test-dir "/subdir") obsidian-excluded-directories)))
+                  (expect (obsidian-not-in-excluded-directory-p file) :to-be t))
+                (let (( obsidian-excluded-directories
+                        (cons (f-join obsidian--test-dir "inbox") obsidian-excluded-directories)))
+                  (expect (obsidian-not-in-excluded-directory-p file) :to-be nil)))))
 
-;; (describe "check obsidian-file-p with ignored directories"
-;;           (before-all (progn
-;;                         (setq obsidian-excluded-directories (list (concat obsidian--test-dir "/inbox")))
-;;                         (setq obsidian-include-hidden-files nil)
-;;                         (obsidian-change-vault obsidian--test-dir)))
-;;           (after-all (progn
-;;                        (setq obsidian-excluded-directories nil)
-;;                        (setq obsidian-include-hidden-files obsidian--test-visibility-cfg)
-;;                        (obsidian-change-vault obsidian--test--original-dir)))
+(describe "check obsidian-file-p with ignored directories"
+          (it "inbox file(s) are not in vault cache"
+              (let ((obsidian-excluded-directories
+                     (list (f-join obsidian--test-dir "inbox")))
+                    (default-directory obsidian--test-dir)
+                    obsidian-include-hidden-files)
+                (obsidian-rescan-cache)
+                (expect (length (ht-keys (obsidian--vault-cache)))
+                        :not :to-equal obsidian--test-number-of-visible-notes)
+                (expect (length (ht-keys (obsidian--vault-cache)))
+                        :to-equal (1- obsidian--test-number-of-visible-notes))
+                (expect (length (obsidian-directories)) :not :to-equal 2)
+                (expect (length (obsidian-directories)) :to-equal 1))))
 
-;;           (it "inbox file(s) are not in vault cache"
-;;               (expect (length (ht-keys (obsidian--vault-cache)))
-;;                       :not :to-equal obsidian--test-number-of-visible-notes)
-;;               (expect (length (ht-keys (obsidian--vault-cache)))
-;;                       :to-equal (1- obsidian--test-number-of-visible-notes))
-;;               (expect (length (obsidian-directories)) :not :to-equal 2)
-;;               (expect (length (obsidian-directories)) :to-equal 1)))
+(describe "obsidian-file-p"
+          (it "include files right in vault"
+              (obsidian-test--in-test-dir
+               (expect (obsidian-file-p
+                        (f-join obsidian--test-dir "1.md"))
+                       :to-be t)))
+          (it "include files in subdirs"
+              (obsidian-test--in-test-dir
+               (expect (obsidian-file-p
+                        (f-join obsidian--test-dir "subdir/1-sub.md"))
+                       :to-be t)))
+          (it "exclude files in trash"
+              (let ((default-directory obsidian--test-dir))
+                (expect (obsidian-file-p
+                         (f-join ".trash/trash.md"))
+                        :to-be nil))))
 
-;; (describe "obsidian-file-p"
-;;           (before-all (obsidian-change-vault obsidian--test-dir))
-;;           (after-all (obsidian-change-vault obsidian--test--original-dir))
+(describe "obsidian list all visible files"
+          (before-all (setq obsidian-include-hidden-files nil))
+          (after-all (setq obsidian-include-hidden-files obsidian--test-visibility-cfg))
+          (it "check visible file count"
+              (obsidian-test--in-test-dir-with-cache
+               (expect (length (obsidian-files)) :to-equal obsidian--test-number-of-visible-notes))))
 
-;;           (it "include files right in vault"
-;;               (expect (obsidian-file-p "./tests/test_vault/1.md") :to-be t))
-;;           (it "include files in subdirs"
-;;               (expect (obsidian-file-p "./tests/test_vault/subdir/1-sub.md") :to-be t))
-;;           (it "exclude files in trash"
-;;               (expect (obsidian-file-p "./tests/test_vault/.trash/trash.md") :to-be nil)))
+(describe "obsidian list all files including hidden files"
+          (before-all (setq obsidian-include-hidden-files t))
+          (after-all (setq obsidian-include-hidden-files obsidian--test-visibility-cfg))
+          (it "check all files count"
+              (obsidian-test--in-test-dir-with-cache
+               (expect (length (obsidian-files)) :to-equal obsidian--test-number-of-notes))))
 
-;; (describe "obsidian list all visible files"
-;;           (before-all (progn
-;;                         (setq obsidian-include-hidden-files nil)
-;;                         (obsidian-change-vault obsidian--test-dir)))
-;;           (after-all (progn
-;;                        (setq obsidian-include-hidden-files obsidian--test-visibility-cfg)
-;;                        (obsidian-change-vault obsidian--test--original-dir)))
+(describe "obsidian-directories"
+          (before-all (setq obsidian-include-hidden-files nil))
+          (after-all (setq obsidian-include-hidden-files obsidian--test-visibility-cfg))
+          (it "check directory count"
+              (obsidian-test--in-test-dir
+               (expect (length (obsidian-directories)) :to-equal
+                       obsidian--test-number-of-visible-directories))))
 
-;;           (it "check visible file count"
-;;               (expect (length (obsidian-files)) :to-equal obsidian--test-number-of-visible-notes)))
+(describe "obsidian-remove-front-matter-front-string"
+          (it "Remove front matter from string"
+              (expect (obsidian-remove-front-matter-from-string "---\ntags: [foo]\n---\none\ntwo")
+                      :to-equal "one\ntwo"))
+          (it "Return string when front matter isn't present"
+              (expect (obsidian-remove-front-matter-from-string "---\none\ntwo")
+                      :to-equal "---\none\ntwo")
+              (expect (obsidian-remove-front-matter-from-string "one\ntwo")
+                      :to-equal "one\ntwo")))
 
-;; (describe "obsidian list all files including hidden files"
-;;           (before-all (progn
-;;                         (setq obsidian-include-hidden-files t)
-;;                         (obsidian-change-vault obsidian--test-dir)))
-;;           (after-all (progn
-;;                        (setq obsidian-include-hidden-files obsidian--test-visibility-cfg)
-;;                        (obsidian-change-vault obsidian--test--original-dir)))
+(describe "obsidian-find-tags-in-string"
+          (before-all (obsidian-change-vault obsidian--test-dir))
+          (after-all (obsidian-change-vault obsidian--test--original-dir))
 
-;;           (it "check all files count"
-;;               (expect (length (obsidian-files)) :to-equal obsidian--test-number-of-notes)))
+          (it "find tags in string"
+              (expect (length (obsidian-find-tags-in-string
+                               "#foo bar #spam #bar-spam #spam_bar #foo+spam #foo=bar not tags #123 #+invalidtag"))
+                      :to-equal 6)
+              (expect (obsidian-find-tags-in-string "---\ntags: \n---") :to-equal nil)
+              (expect (obsidian-find-tags-in-string "---\ntags: one\n---") :to-equal nil)
+              (expect (obsidian-find-tags-in-string "---\ntags: one two three\n---") :to-equal nil)
+              (expect (obsidian-find-tags-in-string "---\ntags: one, two, three\n---") :to-equal nil)
+              (expect (obsidian-find-tags-in-string "---\ntags: [one two three]\n---") :to-equal nil)
+              (expect (obsidian-find-tags-in-string "---\ntags: [one #two three]\n---") :to-equal nil)
+              (expect (obsidian-find-tags-in-string "---\ntags: one, #two, three---\n") :to-equal nil)
+              (expect (obsidian-find-tags-in-string "---\ntags: [one, two, three]\n---")
+                      :to-equal '("one" "two" "three"))
+              (expect (obsidian-find-tags-in-string "---\ntags:\n- one\n- two\n- three\n---\n")
+                      :to-equal '("one" "two" "three"))))
 
-;; (describe "obsidian-directories"
-;;           (before-all (progn
-;;                         (setq obsidian-include-hidden-files nil)
-;;                         (obsidian-change-vault obsidian--test-dir)))
-;;           (after-all (progn
-;;                        (setq obsidian-include-hidden-files obsidian--test-visibility-cfg)
-;;                        (obsidian-change-vault obsidian--test--original-dir)))
+(describe "obsidian-find-aliases-in-string"
+          (before-all (obsidian-change-vault obsidian--test-dir))
+          (after-all (obsidian-change-vault obsidian--test--original-dir))
+          (it "find aliases in string"
+              (expect (obsidian-find-aliases-in-string "---\naliases: \n---")
+                      :to-equal nil)
+              (expect (obsidian-find-aliases-in-string "---\naliases: [file1]\n---")
+                      :to-equal '("file1"))
+              (expect (obsidian-find-aliases-in-string "---\naliases: [file1, file2]\n---")
+                      :to-equal '("file1" "file2"))
+              (expect (obsidian-find-aliases-in-string "---\naliases:\n- file1\n- file2\n---")
+                      :to-equal '("file1" "file2"))))
 
-;;           (it "check directory count"
-;;               (expect (length (obsidian-directories)) :to-equal
-;;                       obsidian--test-number-of-visible-directories)))
+(describe "obsidian-list-visible-tags"
+          (before-all (progn
+                        (setq obsidian-include-hidden-files nil)
+                        (obsidian-change-vault obsidian--test-dir)))
+          (after-all (progn
+                       (setq obsidian-include-hidden-files obsidian--test-visibility-cfg)
+                       (obsidian-change-vault obsidian--test--original-dir)))
 
-;; (describe "obsidian-remove-front-matter-front-string"
-;;           (it "Remove front matter from string"
-;;               (expect (obsidian-remove-front-matter-from-string "---\ntags: [foo]\n---\none\ntwo")
-;;                       :to-equal "one\ntwo"))
-;;           (it "Return string when front matter isn't present"
-;;               (expect (obsidian-remove-front-matter-from-string "---\none\ntwo")
-;;                       :to-equal "---\none\ntwo")
-;;               (expect (obsidian-remove-front-matter-from-string "one\ntwo")
-;;                       :to-equal "one\ntwo")))
+          (it "find all tags in the vault"
+              (expect (length (obsidian-tags)) :to-equal obsidian--test-number-of-visible-tags)))
 
-;; (describe "obsidian-find-tags-in-string"
-;;           (before-all (obsidian-change-vault obsidian--test-dir))
-;;           (after-all (obsidian-change-vault obsidian--test--original-dir))
+(describe "obsidian list all tags including hidden tags"
+          (before-all (setq obsidian-include-hidden-files t))
+          (after-all (setq obsidian-include-hidden-files obsidian--test-visibility-cfg))
+          (it "find all tags in the vault"
+              (obsidian-test--in-test-dir-with-cache
+               (expect (length (obsidian-tags)) :to-equal obsidian--test-number-of-tags))))
 
-;;           (it "find tags in string"
-;;               (expect (length (obsidian-find-tags-in-string
-;;                                "#foo bar #spam #bar-spam #spam_bar #foo+spam #foo=bar not tags #123 #+invalidtag"))
-;;                       :to-equal 6)
-;;               (expect (obsidian-find-tags-in-string "---\ntags: \n---") :to-equal nil)
-;;               (expect (obsidian-find-tags-in-string "---\ntags: one\n---") :to-equal nil)
-;;               (expect (obsidian-find-tags-in-string "---\ntags: one two three\n---") :to-equal nil)
-;;               (expect (obsidian-find-tags-in-string "---\ntags: one, two, three\n---") :to-equal nil)
-;;               (expect (obsidian-find-tags-in-string "---\ntags: [one two three]\n---") :to-equal nil)
-;;               (expect (obsidian-find-tags-in-string "---\ntags: [one #two three]\n---") :to-equal nil)
-;;               (expect (obsidian-find-tags-in-string "---\ntags: one, #two, three---\n") :to-equal nil)
-;;               (expect (obsidian-find-tags-in-string "---\ntags: [one, two, three]\n---")
-;;                       :to-equal '("one" "two" "three"))
-;;               (expect (obsidian-find-tags-in-string "---\ntags:\n- one\n- two\n- three\n---\n")
-;;                       :to-equal '("one" "two" "three"))))
+(defvar-local obsidian--test-correct-front-matter "---
+aliases: [AI, Artificial Intelligence]
+tags: [one, two, three]
+key4:
+- four
+- five
+- six
+---
+")
+(defvar obsidian--test-incorrect-front-matter--not-start-of-file
+  (s-concat "# Header\n" obsidian--test-correct-front-matter))
 
-;; (describe "obsidian-find-aliases-in-string"
-;;           (before-all (obsidian-change-vault obsidian--test-dir))
-;;           (after-all (obsidian-change-vault obsidian--test--original-dir))
-;;           (it "find aliases in string"
-;;               (expect (obsidian-find-aliases-in-string "---\naliases: \n---")
-;;                       :to-equal nil)
-;;               (expect (obsidian-find-aliases-in-string "---\naliases: [file1]\n---")
-;;                       :to-equal '("file1"))
-;;               (expect (obsidian-find-aliases-in-string "---\naliases: [file1, file2]\n---")
-;;                       :to-equal '("file1" "file2"))
-;;               (expect (obsidian-find-aliases-in-string "---\naliases:\n- file1\n- file2\n---")
-;;                       :to-equal '("file1" "file2"))))
+(describe "obsidian-aliases"
+          (before-all (obsidian-change-vault obsidian--test-dir))
+          (after-all (obsidian-change-vault obsidian--test--original-dir))
 
-;; (describe "obsidian-list-visible-tags"
-;;           (before-all (progn
-;;                         (setq obsidian-include-hidden-files nil)
-;;                         (obsidian-change-vault obsidian--test-dir)))
-;;           (after-all (progn
-;;                        (setq obsidian-include-hidden-files obsidian--test-visibility-cfg)
-;;                        (obsidian-change-vault obsidian--test--original-dir)))
+          (it "check that front-matter is found"
+              (expect (->> obsidian--test-correct-front-matter
+                           obsidian-find-yaml-front-matter-in-string
+                           (gethash 'aliases)) :to-equal ["AI" "Artificial Intelligence"]))
 
-;;           (it "find all tags in the vault"
-;;               (expect (length (obsidian-tags)) :to-equal obsidian--test-number-of-visible-tags)))
+          (it "check that front-matter is ignored if not at the top of file"
+              (expect (obsidian-find-yaml-front-matter-in-string
+                       obsidian--test-incorrect-front-matter--not-start-of-file) :to-equal nil))
 
-;; (describe "obsidian list all tags including hidden tags"
-;;           (before-all (progn
-;;                         (setq obsidian-include-hidden-files t)
-;;                         (obsidian-change-vault obsidian--test-dir)))
-;;           (after-all (progn
-;;                        (setq obsidian-include-hidden-files obsidian--test-visibility-cfg)
-;;                        (obsidian-change-vault obsidian--test--original-dir)))
+          (it "check that front-matter in vault is correct"
+              (let ((alias-list (obsidian-aliases)))
+                (expect (length alias-list) :to-equal 6)
+                (expect (seq-contains-p alias-list "2") :to-equal t)
+                (expect (seq-contains-p alias-list "2-sub-alias") :to-equal t)
+                (expect (seq-contains-p alias-list "complex file name") :to-equal t)
+                (expect (seq-contains-p alias-list "alias-one-off") :to-equal t)
+                (expect (seq-contains-p alias-list "alias1") :to-equal t)
+                (expect (seq-contains-p alias-list "alias2") :to-equal t))))
 
-;;           (it "find all tags in the vault"
-;;               (expect (length (obsidian-tags)) :to-equal obsidian--test-number-of-tags)))
+(describe "obsidian--link-p"
+          (it "non link"
+              (expect (obsidian--link-p "not link") :to-equal nil))
 
-;; (describe "obsidian-rescan-cache"
-;;           (before-all (obsidian-change-vault obsidian--test-dir))
-;;           (after-all (obsidian-change-vault obsidian--test--original-dir))
+          (it "wiki link"
+              (expect (obsidian--link-p "[[foo.md]]") :to-equal t)
+              (expect (obsidian--link-p "[[foo]]") :to-equal t)
+              (expect (obsidian--link-p "[[foo|annotated link]]") :to-equal t))
 
-;;           (it "check tags are filled out after obsidian-rescan-cache"
-;;               (expect (progn
-;; 	                    (obsidian-rescan-cache)
-;; 	                    (length (obsidian-tags))) :to-equal obsidian--test-number-of-tags)))
+          (it "markdown link"
+              (expect (obsidian--link-p "[foo](bar)") :to-equal t)
+              (expect (obsidian--link-p "[foo](bar.md)") :to-equal t)))
 
+(describe "obsidian links count including wiki links"
+          (before-all (progn
+                        (setq markdown-enable-wiki-links t)
+                        (setq obsidian-wiki-link-alias-first nil)))
+          (after-all (progn
+                       (setq markdown-enable-wiki-links
+                             obsidian--test--original-enable-wiki-links)
+                       (setq obsidian-wiki-link-alias-first
+                             obsidian--test--original-wik-link-alias-first)))
 
-;; (defvar-local obsidian--test-correct-front-matter "---
-;; aliases: [AI, Artificial Intelligence]
-;; tags: [one, two, three]
-;; key4:
-;; - four
-;; - five
-;; - six
-;; ---
-;; ")
-;; (defvar obsidian--test-incorrect-front-matter--not-start-of-file
-;;   (s-concat "# Header\n" obsidian--test-correct-front-matter))
+          (it "1.md link count"
+              (obsidian-test--in-test-dir-with-cache
+               (let* ((file (obsidian-expand-file-name "1.md"))
+                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links)))
+                 (expect (length (ht-keys links)) :to-equal 3))))
 
-;; (describe "obsidian-aliases"
-;;           (before-all (obsidian-change-vault obsidian--test-dir))
-;;           (after-all (obsidian-change-vault obsidian--test--original-dir))
+          (it "subdir/1-sub.md link count"
+              (obsidian-test--in-test-dir-with-cache
+               (let* ((file (obsidian-expand-file-name "subdir/1-sub.md"))
+                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links)))
+                 (expect (length (ht-keys links)) :to-equal 2))))
 
-;;           (it "check that front-matter is found"
-;;               (expect (->> obsidian--test-correct-front-matter
-;;                            obsidian-find-yaml-front-matter-in-string
-;;                            (gethash 'aliases)) :to-equal ["AI" "Artificial Intelligence"]))
+          (it "2.md link count"
+              (obsidian-test--in-test-dir-with-cache
+               (let* ((file (obsidian-expand-file-name "2.md"))
+                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links))
+                      (count (seq-reduce #'+ (ht-map (lambda (k v) (length v)) links) 0)))
+                 (expect count :to-equal 8))))
 
-;;           (it "check that front-matter is ignored if not at the top of file"
-;;               (expect (obsidian-find-yaml-front-matter-in-string
-;;                        obsidian--test-incorrect-front-matter--not-start-of-file) :to-equal nil))
+          (it "2-vault-paths.md link count"
+              (obsidian-test--in-test-dir-with-cache
+               (let* ((file (obsidian-expand-file-name "2-vault-paths.md"))
+                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links))
+                      (count (seq-reduce #'+ (ht-map (lambda (k v) (length v)) links) 0)))
+                 (expect count :to-equal 9)))))
 
-;;           (it "check that front-matter in vault is correct"
-;;               (let ((alias-list (obsidian-aliases)))
-;;                 (expect (length alias-list) :to-equal 6)
-;;                 (expect (seq-contains-p alias-list "2") :to-equal t)
-;;                 (expect (seq-contains-p alias-list "2-sub-alias") :to-equal t)
-;;                 (expect (seq-contains-p alias-list "complex file name") :to-equal t)
-;;                 (expect (seq-contains-p alias-list "alias-one-off") :to-equal t)
-;;                 (expect (seq-contains-p alias-list "alias1") :to-equal t)
-;;                 (expect (seq-contains-p alias-list "alias2") :to-equal t))))
+(describe "obsidian links with wiki links disabled"
+          (before-all (setq markdown-enable-wiki-links nil))
+          (after-all (setq markdown-enable-wiki-links
+                           obsidian--test--original-enable-wiki-links))
 
-;; (describe "obsidian--link-p"
-;;           (it "non link"
-;;               (expect (obsidian--link-p "not link") :to-equal nil))
+          (it "1.md link count"
+              (obsidian-test--in-test-dir-with-cache
+               (let* ((file (obsidian-expand-file-name "1.md"))
+                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links)))
+                 (expect (length (ht-keys links)) :to-equal 3))))
 
-;;           (it "wiki link"
-;;               (expect (obsidian--link-p "[[foo.md]]") :to-equal t)
-;;               (expect (obsidian--link-p "[[foo]]") :to-equal t)
-;;               (expect (obsidian--link-p "[[foo|annotated link]]") :to-equal t))
+          (it "subdir/1-sub.md link count"
+              (obsidian-test--in-test-dir-with-cache
+               (let* ((file (obsidian-expand-file-name "subdir/1-sub.md"))
+                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links)))
+                 (expect (length (ht-keys links)) :to-equal 1))))
 
-;;           (it "markdown link"
-;;               (expect (obsidian--link-p "[foo](bar)") :to-equal t)
-;;               (expect (obsidian--link-p "[foo](bar.md)") :to-equal t)))
+          (it "2.md link count"
+              (obsidian-test--in-test-dir-with-cache
+               (let* ((file (obsidian-expand-file-name "2.md"))
+                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links))
+                      (count (seq-reduce #'+ (ht-map (lambda (k v) (length v)) links) 0)))
+                 (expect count :to-equal 4))))
 
-;; (describe "obsidian links count including wiki links"
-;;           (before-all (progn
-;;                         (setq markdown-enable-wiki-links t)
-;;                         (setq obsidian-wiki-link-alias-first nil)
-;;                         (obsidian-change-vault obsidian--test-dir)))
-;;           (after-all (progn
-;;                        (setq markdown-enable-wiki-links
-;;                              obsidian--test--original-enable-wiki-links)
-;;                        (setq obsidian-wiki-link-alias-first
-;;                              obsidian--test--original-wik-link-alias-first)
-;;                        (obsidian-change-vault obsidian--test--original-dir)))
+          (it "2-vault-paths.md link count"
+              (obsidian-test--in-test-dir-with-cache
+               (let* ((file (obsidian-expand-file-name "2-vault-paths.md"))
+                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links))
+                      (count (seq-reduce #'+ (ht-map (lambda (k v) (length v)) links) 0)))
+                 (expect count :to-equal 5)))))
 
-;;           (it "1.md link count"
-;;               (let* ((file (obsidian-expand-file-name "1.md"))
-;;                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links)))
-;;                 (expect (length (ht-keys links)) :to-equal 3)))
+(describe "obsidian-backlinks with wiki links"
+          (before-all (setq markdown-enable-wiki-links t))
+          (after-all (setq markdown-enable-wiki-links
+                           obsidian--test--original-enable-wiki-links))
 
-;;           (it "subdir/1-sub.md link count"
-;;               (let* ((file (obsidian-expand-file-name "subdir/1-sub.md"))
-;;                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links)))
-;;                 (expect (length (ht-keys links)) :to-equal 2)))
+          (it "1.md using obsidian-backlinks"
+              (obsidian-test--in-test-dir-with-cache
+               (let* ((file (obsidian-file-to-absolute-path "1.md"))
+                      (count (obsidian-test--backlinks-count file)))
+                 (expect count :to-equal 3))))
 
-;;           (it "2.md link count"
-;;               (let* ((file (obsidian-expand-file-name "2.md"))
-;;                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links))
-;;                      (count (seq-reduce #'+ (ht-map (lambda (k v) (length v)) links) 0)))
-;;                 (expect count :to-equal 8)))
+          (it "2-sub with spaces and буквы.md using obsidian-backlinks"
+              (obsidian-test--in-test-dir-with-cache
+               (let* ((file (obsidian-file-to-absolute-path "2-sub with spaces and буквы.md"))
+                      (count (obsidian-test--backlinks-count file)))
+                 (expect count :to-equal 8)))))
 
-;;           (it "2-vault-paths.md link count"
-;;               (let* ((file (obsidian-expand-file-name "2-vault-paths.md"))
-;;                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links))
-;;                      (count (seq-reduce #'+ (ht-map (lambda (k v) (length v)) links) 0)))
-;;                 (expect count :to-equal 9))))
+(describe "obsidian-backlinks without wiki links"
+          (before-all (setq markdown-enable-wiki-links nil))
+          (after-all (setq markdown-enable-wiki-links
+                           obsidian--test--original-enable-wiki-links))
 
-;; (describe "obsidian links with wiki links disabled"
-;;           (before-all (progn
-;;                         (setq markdown-enable-wiki-links nil)
-;;                         (obsidian-change-vault obsidian--test-dir)))
-;;           (after-all (progn
-;;                        (setq markdown-enable-wiki-links
-;;                              obsidian--test--original-enable-wiki-links)
-;;                        (obsidian-change-vault obsidian--test--original-dir)))
+          (it "1.md using obsidian-backlinks"
+              (obsidian-test--in-test-dir-with-cache
+               (let* ((file (obsidian-file-to-absolute-path "1.md"))
+                      (count (obsidian-test--backlinks-count file)))
+                 (expect count :to-equal 2))))
 
-;;           (it "1.md link count"
-;;               (let* ((file (obsidian-expand-file-name "1.md"))
-;;                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links)))
-;;                 (expect (length (ht-keys links)) :to-equal 3)))
+          (it "2-sub with spaces and буквы.md using obsidian-backlinks"
+              (obsidian-test--in-test-dir-with-cache
+               (let* ((file (obsidian-file-to-absolute-path "2-sub with spaces and буквы.md"))
+                      (count (obsidian-test--backlinks-count file)))
+                 (expect count :to-equal 3)))))
 
-;;           (it "subdir/1-sub.md link count"
-;;               (let* ((file (obsidian-expand-file-name "subdir/1-sub.md"))
-;;                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links)))
-;;                 (expect (length (ht-keys links)) :to-equal 1)))
+(describe "obsidian-move-file"
+          (let ((orig-file-name
+                 (expand-file-name (f-join obsidian--test-dir "subdir/aliases.md")))
+                (moved-file-name
+                 (expand-file-name (f-join obsidian--test-dir "inbox/aliases.md"))))
 
-;;           (it "2.md link count"
-;;               (let* ((file (obsidian-expand-file-name "2.md"))
-;;                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links))
-;;                      (count (seq-reduce #'+ (ht-map (lambda (k v) (length v)) links) 0)))
-;;                 (expect count :to-equal 4)))
+            (it "(obsidian--vault-cache) is updated when a file is moved"
+                ;; Open file and confirm that it is in the files cache
+                (obsidian-test--in-test-dir-with-cache
+                 (let ((executing-kbd-macro t)
+                       (unread-command-events (listify-key-sequence "subdir/aliases.md\n")))
+                   (call-interactively #'obsidian-jump))
+                 (expect (obsidian-test--cached-file-p orig-file-name)  :to-equal t)
+                 (expect (obsidian-test--cached-file-p moved-file-name) :to-equal nil)
 
-;;           (it "2-vault-paths.md link count"
-;;               (let* ((file (obsidian-expand-file-name "2-vault-paths.md"))
-;;                      (links (ht-get (ht-get (obsidian--vault-cache) file) 'links))
-;;                      (count (seq-reduce #'+ (ht-map (lambda (k v) (length v)) links) 0)))
-;;                 (expect count :to-equal 5))))
+                 ;; Move the file and confirm that new path is in cache and old path is not
+                 (let ((make-backup-files nil)
+                       (executing-kbd-macro t)
+                       (unread-command-events (listify-key-sequence "inbox\n")))
+                   (call-interactively #'obsidian-move-file))
+                 (expect (obsidian-test--cached-file-p orig-file-name)  :to-equal nil)
+                 (expect (obsidian-test--cached-file-p moved-file-name) :to-equal t)
 
-;; (describe "obsidian-backlinks with wiki links"
-;;           (before-all (progn
-;;                         (setq markdown-enable-wiki-links t)
-;;                         (obsidian-change-vault obsidian--test-dir)))
-;;           (after-all (progn
-;;                        (setq markdown-enable-wiki-links
-;;                              obsidian--test--original-enable-wiki-links)
-;;                        (obsidian-change-vault obsidian--test--original-dir)))
+                 ;; Return file and confirm that the cache was again updated
+                 (let ((make-backup-files nil)
+                       (executing-kbd-macro t)
+                       (unread-command-events (listify-key-sequence "subdir\n")))
+                   (call-interactively #'obsidian-move-file))
+                 (expect (obsidian-test--cached-file-p orig-file-name)  :to-equal t)
+                 (expect (obsidian-test--cached-file-p moved-file-name) :to-equal nil)))))
 
-;;           (it "1.md using obsidian-backlinks"
-;;               (let* ((file (obsidian-file-to-absolute-path "1.md"))
-;;                      (count (obsidian-test--backlinks-count file)))
-;;                 (expect count :to-equal 3)))
+(describe
+ "Insert links for files that don't exist"
+ (before-all (setq old-inbox obsidian-inbox-directory
+                   obsidian-inbox-directory "inbox"))
+ (after-each (obsidian-test--delete-all-test-files))
+ (after-all (setq obsidian-inbox-directory old-inbox))
 
-;;           (it "2-sub with spaces and буквы.md using obsidian-backlinks"
-;;               (let* ((file (obsidian-file-to-absolute-path "2-sub with spaces and буквы.md"))
-;;                      (count (obsidian-test--backlinks-count file)))
-;;                 (expect count :to-equal 8))))
+ (it "insert link from vault root when inbox setting is t"
+     (obsidian-test--in-test-dir-with-cache
+      (obsidian-test--jump-to-file "1.md")
+      (newline)
+      (let* ((obsidian-create-unfound-files-in-inbox t)
+             (executing-kbd-macro t)
+             (unread-command-events (listify-key-sequence "bar\n"))
+             (bad-path
+              (f-join default-directory "bar.md"))
+             (good-path
+              (f-join default-directory obsidian-inbox-directory "bar.md")))
+        (call-interactively #'obsidian-insert-link)
+        (expect (file-exists-p bad-path) :to-equal nil)
+        (expect (file-exists-p good-path) :to-equal t))
+      (kill-whole-line)))
 
-;; (describe "obsidian-backlinks without wiki links"
-;;           (before-all (progn
-;;                         (setq markdown-enable-wiki-links nil)
-;;                         (obsidian-change-vault obsidian--test-dir)))
-;;           (after-all (progn
-;;                        (setq markdown-enable-wiki-links
-;;                              obsidian--test--original-enable-wiki-links)
-;;                        (obsidian-change-vault obsidian--test--original-dir)))
+ (it "insert link from subdir when inbox setting is t"
+     (obsidian-test--in-test-dir-with-cache
+      (obsidian-test--jump-to-file "subdir/2-sub.md")
+      (newline)
+      (let* ((obsidian-create-unfound-files-in-inbox t)
+             (executing-kbd-macro t)
+             (unread-command-events (listify-key-sequence "bar\n"))
+             (bad-path
+              (f-join default-directory "subdir/bar.md"))
+             (good-path
+              (concat default-directory "/" obsidian-inbox-directory "/bar.md"))
+             (bad-path-root
+              (concat default-directory "/bar.md")))
+        (call-interactively #'obsidian-insert-link)
+        (expect (file-exists-p bad-path) :to-equal nil)
+        (expect (file-exists-p good-path) :to-equal t)
+        (expect (file-exists-p bad-path-root) :to-equal nil))
+      (kill-whole-line)))
 
-;;           (it "1.md using obsidian-backlinks"
-;;               (let* ((file (obsidian-file-to-absolute-path "1.md"))
-;;                      (count (obsidian-test--backlinks-count file)))
-;;                 (expect count :to-equal 2)))
+ (it "insert link from vault root when inbox setting is nil"
+     (obsidian-test--in-test-dir-with-cache
+      (obsidian-test--jump-to-file "1.md")
+      (newline)
+      (let* ((obsidian-create-unfound-files-in-inbox nil)
+             (executing-kbd-macro t)
+             (unread-command-events (listify-key-sequence "bar\n"))
+             (good-path
+              (f-join default-directory "bar.md"))
+             (bad-path
+              (f-join default-directory obsidian-inbox-directory "bar.md")))
+        (call-interactively #'obsidian-insert-link)
+        (expect good-path :to-be nil)
+        (expect (file-exists-p good-path) :to-equal t)
+        (expect (file-exists-p bad-path) :to-equal nil))
+      (kill-whole-line)))
 
-;;           (it "2-sub with spaces and буквы.md using obsidian-backlinks"
-;;               (let* ((file (obsidian-file-to-absolute-path "2-sub with spaces and буквы.md"))
-;;                      (count (obsidian-test--backlinks-count file)))
-;;                 (expect count :to-equal 3))))
-
-;; (describe "obsidian-move-file"
-;;           (before-all (obsidian-change-vault obsidian--test-dir))
-;;           (after-all (obsidian-change-vault obsidian--test--original-dir))
-
-;;           (let* ((orig-file-name
-;;                   (expand-file-name (s-concat obsidian--test-dir "/subdir/aliases.md")))
-;;                  (moved-file-name
-;;                   (expand-file-name (s-concat obsidian--test-dir "/inbox/aliases.md"))))
-
-;;             (it "(obsidian--vault-cache) is updated when a file is moved"
-;;                 ;; Open file and confirm that it is in the files cache
-;;                 (let* ((executing-kbd-macro t)
-;;                        (unread-command-events (listify-key-sequence "subdir/aliases.md\n")))
-;;                   (call-interactively #'obsidian-jump))
-;;                 (expect (obsidian-test--cached-file-p orig-file-name)  :to-equal t)
-;;                 (expect (obsidian-test--cached-file-p moved-file-name) :to-equal nil)
-
-;;                 ;; Move the file and confirm that new path is in cache and old path is not
-;;                 (let* ((make-backup-files nil)
-;;                        (executing-kbd-macro t)
-;;                        (unread-command-events (listify-key-sequence "inbox\n")))
-;;                   (call-interactively #'obsidian-move-file))
-;;                 (expect (obsidian-test--cached-file-p orig-file-name)  :to-equal nil)
-;;                 (expect (obsidian-test--cached-file-p moved-file-name) :to-equal t)
-
-;;                 ;; Return file and confirm that the cache was again updated
-;;                 (let* ((make-backup-files nil)
-;;                        (executing-kbd-macro t)
-;;                        (unread-command-events (listify-key-sequence "subdir\n")))
-;;                   (call-interactively #'obsidian-move-file))
-;;                 (expect (obsidian-test--cached-file-p orig-file-name)  :to-equal t)
-;;                 (expect (obsidian-test--cached-file-p moved-file-name) :to-equal nil))))
-
-;; (describe
-;;  "Insert links for files that don't exist"
-;;  (before-all (progn
-;;                (setq old-inbox obsidian-inbox-directory)
-;;                (setq obsidian-inbox-directory "inbox")
-;;                (obsidian-change-vault obsidian--test-dir)))
-;;  (after-each (obsidian-test--delete-all-test-files))
-;;  (after-all (progn
-;;               (setq obsidian-inbox-directory old-inbox)
-;;               (obsidian-change-vault obsidian--test--original-dir)))
-
-;;  (it "insert link from vault root when inbox setting is t"
-;;      (obsidian-test--jump-to-file "1.md")
-;;      (newline)
-;;      (let* ((obsidian-create-unfound-files-in-inbox t)
-;;             (executing-kbd-macro t)
-;;             (unread-command-events (listify-key-sequence "bar\n"))
-;;             (bad-path
-;;              (concat obsidian-directory "/bar.md"))
-;;             (good-path
-;;              (concat obsidian-directory "/" obsidian-inbox-directory "/bar.md")))
-;;        (call-interactively #'obsidian-insert-link)
-;;        (expect (file-exists-p bad-path) :to-equal nil)
-;;        (expect (file-exists-p good-path) :to-equal t))
-;;      (kill-whole-line))
-
-;;  (it "insert link from subdir when inbox setting is t"
-;;      (obsidian-test--jump-to-file "subdir/2-sub.md")
-;;      (newline)
-;;      (let* ((obsidian-create-unfound-files-in-inbox t)
-;;             (executing-kbd-macro t)
-;;             (unread-command-events (listify-key-sequence "bar\n"))
-;;             (bad-path
-;;              (concat obsidian-directory "/subdir/bar.md"))
-;;             (good-path
-;;              (concat obsidian-directory "/" obsidian-inbox-directory "/bar.md"))
-;;             (bad-path-root
-;;              (concat obsidian-directory "/bar.md")))
-;;        (call-interactively #'obsidian-insert-link)
-;;        (expect (file-exists-p bad-path) :to-equal nil)
-;;        (expect (file-exists-p good-path) :to-equal t)
-;;        (expect (file-exists-p bad-path-root) :to-equal nil))
-;;      (kill-whole-line))
-
-;;  (it "insert link from vault root when inbox setting is nil"
-;;      (obsidian-test--jump-to-file "1.md")
-;;      (newline)
-;;      (let* ((obsidian-create-unfound-files-in-inbox nil)
-;;             (executing-kbd-macro t)
-;;             (unread-command-events (listify-key-sequence "bar\n"))
-;;             (good-path
-;;              (concat obsidian-directory "/bar.md"))
-;;             (bad-path
-;;              (concat obsidian-directory "/" obsidian-inbox-directory "/bar.md")))
-;;        (call-interactively #'obsidian-insert-link)
-;;        (expect (file-exists-p good-path) :to-equal t)
-;;        (expect (file-exists-p bad-path) :to-equal nil))
-;;      (kill-whole-line))
-
-;;  (it "insert link from subdir when inbox setting is nil"
-;;      (obsidian-test--jump-to-file "subdir/2-sub.md")
-;;      (newline)
-;;      (let* ((obsidian-create-unfound-files-in-inbox nil)
-;;             (executing-kbd-macro t)
-;;             (unread-command-events (listify-key-sequence "bar\n"))
-;;             (good-path
-;;              (concat obsidian-directory "/subdir/bar.md"))
-;;             (bad-path
-;;              (concat obsidian-directory "/" obsidian-inbox-directory "/bar.md"))
-;;             (bad-path-root
-;;              (concat obsidian-directory "/bar.md")))
-;;        (call-interactively #'obsidian-insert-link)
-;;        (expect (file-exists-p good-path) :to-equal t)
-;;        (expect (file-exists-p bad-path) :to-equal nil)
-;;        (expect (file-exists-p bad-path-root) :to-equal nil))
-;;      (kill-whole-line)))
+ (it "insert link from subdir when inbox setting is nil"
+     (obsidian-test--in-test-dir-with-cache
+      (obsidian-test--jump-to-file "subdir/2-sub.md")
+      (newline)
+      (let* ((obsidian-create-unfound-files-in-inbox nil)
+             (executing-kbd-macro t)
+             (unread-command-events (listify-key-sequence "bar\n"))
+             (good-path
+              (concat default-directory "/subdir/bar.md"))
+             (bad-path
+              (concat default-directory "/" obsidian-inbox-directory "/bar.md"))
+             (bad-path-root
+              (concat default-directory "/bar.md")))
+        (call-interactively #'obsidian-insert-link)
+        (expect (file-exists-p good-path) :to-equal t)
+        (expect (file-exists-p bad-path) :to-equal nil)
+        (expect (file-exists-p bad-path-root) :to-equal nil))
+      (kill-whole-line))))
 
 (provide 'test-obsidian)
