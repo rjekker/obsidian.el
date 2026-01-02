@@ -166,9 +166,6 @@
                       :to-equal "one\ntwo")))
 
 (describe "obsidian-find-tags-in-string"
-          (before-all (obsidian-change-vault obsidian--test-dir))
-          (after-all (obsidian-change-vault obsidian--test--original-dir))
-
           (it "find tags in string"
               (expect (length (obsidian-find-tags-in-string
                                "#foo bar #spam #bar-spam #spam_bar #foo+spam #foo=bar not tags #123 #+invalidtag"))
@@ -186,8 +183,6 @@
                       :to-equal '("one" "two" "three"))))
 
 (describe "obsidian-find-aliases-in-string"
-          (before-all (obsidian-change-vault obsidian--test-dir))
-          (after-all (obsidian-change-vault obsidian--test--original-dir))
           (it "find aliases in string"
               (expect (obsidian-find-aliases-in-string "---\naliases: \n---")
                       :to-equal nil)
@@ -199,15 +194,12 @@
                       :to-equal '("file1" "file2"))))
 
 (describe "obsidian-list-visible-tags"
-          (before-all (progn
-                        (setq obsidian-include-hidden-files nil)
-                        (obsidian-change-vault obsidian--test-dir)))
-          (after-all (progn
-                       (setq obsidian-include-hidden-files obsidian--test-visibility-cfg)
-                       (obsidian-change-vault obsidian--test--original-dir)))
+          (before-all (setq obsidian-include-hidden-files nil))
+          (after-all (setq obsidian-include-hidden-files obsidian--test-visibility-cfg))
 
           (it "find all tags in the vault"
-              (expect (length (obsidian-tags)) :to-equal obsidian--test-number-of-visible-tags)))
+              (obsidian-test--in-test-dir-with-cache
+               (expect (length (obsidian-tags)) :to-equal obsidian--test-number-of-visible-tags))))
 
 (describe "obsidian list all tags including hidden tags"
           (before-all (setq obsidian-include-hidden-files t))
@@ -229,9 +221,6 @@ key4:
   (s-concat "# Header\n" obsidian--test-correct-front-matter))
 
 (describe "obsidian-aliases"
-          (before-all (obsidian-change-vault obsidian--test-dir))
-          (after-all (obsidian-change-vault obsidian--test--original-dir))
-
           (it "check that front-matter is found"
               (expect (->> obsidian--test-correct-front-matter
                            obsidian-find-yaml-front-matter-in-string
@@ -242,14 +231,15 @@ key4:
                        obsidian--test-incorrect-front-matter--not-start-of-file) :to-equal nil))
 
           (it "check that front-matter in vault is correct"
-              (let ((alias-list (obsidian-aliases)))
-                (expect (length alias-list) :to-equal 6)
-                (expect (seq-contains-p alias-list "2") :to-equal t)
-                (expect (seq-contains-p alias-list "2-sub-alias") :to-equal t)
-                (expect (seq-contains-p alias-list "complex file name") :to-equal t)
-                (expect (seq-contains-p alias-list "alias-one-off") :to-equal t)
-                (expect (seq-contains-p alias-list "alias1") :to-equal t)
-                (expect (seq-contains-p alias-list "alias2") :to-equal t))))
+              (obsidian-test--in-test-dir-with-cache
+               (let ((alias-list (obsidian-aliases)))
+                 (expect (length alias-list) :to-equal 6)
+                 (expect (seq-contains-p alias-list "2") :to-equal t)
+                 (expect (seq-contains-p alias-list "2-sub-alias") :to-equal t)
+                 (expect (seq-contains-p alias-list "complex file name") :to-equal t)
+                 (expect (seq-contains-p alias-list "alias-one-off") :to-equal t)
+                 (expect (seq-contains-p alias-list "alias1") :to-equal t)
+                 (expect (seq-contains-p alias-list "alias2") :to-equal t)))))
 
 (describe "obsidian--link-p"
           (it "non link"
