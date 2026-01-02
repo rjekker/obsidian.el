@@ -224,10 +224,6 @@ If nil, get cache for current buffer."
     cache))
 
 
-(defvar obsidian--tags-map nil "Hash table with tags as keys and list of files as values.")
-
-(defvar obsidian--file-metadata nil "Hash table with file metadata (tags, aliases, links.")
-
 (defvar obsidian--aliases-map (make-hash-table :test 'equal) "Hash table of all Obsidian aliases.")
 
 (defvar obsidian--backlinks-alist (make-hash-table :test 'equal) "Alist of backlinks.")
