@@ -183,12 +183,12 @@ characters of a tag.
 (defconst obsidian-markdown-link-regex "\\[[[:graph:][:blank:]]+\\]\([[:graph:][:blank:]]*\)"
   "Regex pattern used to find markdown links.")
 
-(defvar obsidian--vault-cache-plist nil
+(defvar obsidian--vault-cache-alist nil
   "Cache for Obsidian files.
 
-We have a cache per obsidian vault, in a plist:
+We have a cache per obsidian vault, in an alist:
 
-(vault-root1 cache1 vault-root2 cache2)
+((vault-root1 . cache1) (vault-root2 . cache2))
 
 Where the cache is a hashmap with the following structure
 {<filepath>: {tags: <list-of-tags>
@@ -209,20 +209,20 @@ Each link list contains the following as returned by markdown-link-at-pos:
   "Get the cache for VAULT.
 
 If nil, get cache for current buffer."
-  (plist-get obsidian--vault-cache-plist
-             (or vault (obsidian-vault))
+  (alist-get (or vault (obsidian-vault))
+             obsidian--vault-cache-alist
+             nil nil
              'string=))
 
 
 (defun obsidian--init-vault-cache (file-count &optional vault)
   "Create empty cache for VAULT."
   (let ((cache (make-hash-table :test 'equal :size file-count)))
-    (setq obsidian--vault-cache-plist
-          (plist-put obsidian--vault-cache-plist
-                     (or vault (obsidian-vault))
-                     cache
-                     'string=))
-    cache))
+    (setf (alist-get
+           (or vault (obsidian-vault))
+           obsidian--vault-cache-alist
+           nil nil 'string=)
+          cache)))
 
 
 (defvar obsidian--aliases-map (make-hash-table :test 'equal) "Hash table of all Obsidian aliases.")
@@ -848,8 +848,8 @@ Note is created in the `obsidian-daily-notes-directory' if set, or in
                (eq (buffer-size) 0))
       (obsidian-apply-template
        (f-join (obsidian-vault)
-                 obsidian-templates-directory
-                 obsidian-daily-note-template))
+               obsidian-templates-directory
+               obsidian-daily-note-template))
       (save-buffer))))
 
 ;;;###autoload
@@ -944,7 +944,7 @@ vault root."
                     ((and obsidian-create-unfound-files-in-inbox
                           obsidian-inbox-directory)
                      (f-join (obsidian-vault)
-                               obsidian-inbox-directory f))
+                             obsidian-inbox-directory f))
                     ;; If we're in a file buffer, create new file in same directory
                     (buffer-file-name
                      (let ((rel-path (-> (buffer-file-name)
@@ -1481,23 +1481,23 @@ backlinks for the current buffer unless FORCE is non-nil."
 
 (when (eval-when-compile (require 'hydra nil t))
   (defhydra obsidian-hydra (:hint nil)
-    "
+            "
 Obsidian
 _f_ollow at point   insert _w_ikilink          _q_uit
 _j_ump to note      insert _l_ink              capture daily _n_ote
 _t_ag find          _c_apture new note
 _s_earch by expr.   _u_pdate tags/alises etc.
 "
-    ("c" obsidian-capture)
-    ("n" obsidian-daily-note)
-    ("f" obsidian-follow-link-at-point)
-    ("j" obsidian-jump)
-    ("l" obsidian-insert-link :color blue)
-    ("q" nil :color blue)
-    ("s" obsidian-search)
-    ("t" obsidian-find-tag)
-    ("u" obsidian-update)
-    ("w" obsidian-insert-wikilink :color blue)))
+            ("c" obsidian-capture)
+            ("n" obsidian-daily-note)
+            ("f" obsidian-follow-link-at-point)
+            ("j" obsidian-jump)
+            ("l" obsidian-insert-link :color blue)
+            ("q" nil :color blue)
+            ("s" obsidian-search)
+            ("t" obsidian-find-tag)
+            ("u" obsidian-update)
+            ("w" obsidian-insert-wikilink :color blue)))
 
 ;;;###autoload
 (define-globalized-minor-mode global-obsidian-mode obsidian-mode obsidian-enable-minor-mode)
