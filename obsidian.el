@@ -348,8 +348,7 @@ FILE is an obsidian file if:
   - It is not an Emacs temp file"
   (-when-let* ((raw-path (or file (buffer-file-name (buffer-base-buffer))))
                (path (expand-file-name raw-path))
-               (project (project-current))
-               (in-vault (eq 'obsidian (car project)))
+               (vault (obsidian-vault))
                (md-ext (s-ends-with-p ".md" path))
                (not-dot-file (or obsidian-include-hidden-files
                                  (not (obsidian-dot-file-p path))))
