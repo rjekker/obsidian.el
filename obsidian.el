@@ -145,7 +145,8 @@ the mode, `toggle' toggles the state."
   :init-value nil
   :lighter " obs"
   :after-hook (obsidian-update)
-  :keymap (make-sparse-keymap))
+  :keymap (make-sparse-keymap)
+  (obsidian-rescan-cache))
 
 (defun obsidian--message (msg &optional file)
   "Send MSG to the message buffer specifying the optional FILE and return nil."
