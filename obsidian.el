@@ -823,7 +823,7 @@ Optional argument ARG word to complete."
 (defun obsidian-capture ()
   "Create new obsidian note.
 
-In the `obsidian-inbox-directory' if set otherwise in `obsidian-directory' root."
+In the `obsidian-inbox-directory' if set otherwise in vault root."
   (interactive)
   (let* ((title (read-from-minibuffer "Title: "))
          (filename (s-concat (obsidian-vault) "/" obsidian-inbox-directory "/" title ".md"))
@@ -836,7 +836,7 @@ In the `obsidian-inbox-directory' if set otherwise in `obsidian-directory' root.
   "Create new obsidian daily note.
 
 Note is created in the `obsidian-daily-notes-directory' if set, or in
-`obsidian-inbox-directory' if set, or finally n `obsidian-directory' root."
+`obsidian-inbox-directory' if set, or finally in vault root."
   (interactive)
   (let* ((title (format-time-string "%Y-%m-%d"))
          (filename (s-concat (obsidian-vault) "/" obsidian-daily-notes-directory "/" title ".md"))
@@ -859,7 +859,7 @@ Note is created in the `obsidian-daily-notes-directory' if set, or in
   (let* ((files (obsidian-files))
          (dict (make-hash-table :test 'equal))
          (_ (-map (lambda (f)
-                    (puthash (file-relative-name f obsidian-directory) f dict))
+                    (puthash (file-relative-name f (obsidian-vault)) f dict))
                   files))
          (choices (-sort #'string< (-distinct (-concat (obsidian-aliases) (hash-table-keys dict)))))
          (choice (completing-read "Jump to: " choices))
@@ -901,7 +901,7 @@ Note is created in the `obsidian-daily-notes-directory' if set, or in
   "Provide a list of the directories in the Obsidian vault."
   (let* ((dict (make-hash-table :test 'equal))
          (_ (-map (lambda (d)
-                    (puthash (file-relative-name d obsidian-directory) d dict))
+                    (puthash (file-relative-name d (obsidian-vault)) d dict))
                   (obsidian-directories))))
     dict))
 
@@ -931,10 +931,10 @@ Note is created in the `obsidian-daily-notes-directory' if set, or in
   "Create file if it doesn't exist and return full system path for relative path P.
 
 If the file include directories in its path, we create the file relative to
-`obsidian-directory'.  If there are no paths, we create the new file in
+vault root.  If there are no paths, we create the new file in
 `obsidian-inbox-directory' if `obsidian-inbox-directory' and
 `obsidian-create-unfound-files-in-inbox' are set, otherwise in
-`obsidian-directory'."
+vault root."
   (let* ((f (obsidian--extension p))
          (filename (cond
                     ;; If relative path includes a '/', use vault root
