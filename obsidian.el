@@ -325,15 +325,12 @@ Will detect obsidian vault by the .obsidian folder."
 
 
 (defun obsidian-vault ()
-  "Return vault directory for current buffer."
-  (when-let* ((proj (project-current)))
-    (if (eq 'obsidian (car proj))
-        (expand-file-name (project-root proj))
-      ;; not an obsidian project
-      ;; but can still be a vault
-      (let ((root (project-root proj)))
-        (when (f-dir-p (f-join root ".obsidian"))
-          root)))))
+  "Return vault directory for current buffer.
+
+Note how this does not use `project-current' at all;
+finding the vault is independent of having a project or not."
+  (when-let ((root (locate-dominating-file default-directory ".obsidian")))
+    (expand-file-name root)))
 
 
 (defun obsidian-file-p (&optional file)
