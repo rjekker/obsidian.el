@@ -61,12 +61,20 @@
     (let ((default-directory (f-join obsidian--test-dir "subdir")))
       (expect (obsidian-vault) :to-equal (expand-file-name
                                           obsidian--test-dir))))
-    
   (it "is nil outside of vault"
     (let* ((tmp-dir (make-temp-file "obs" t))
            (default-directory tmp-dir))
       (expect (obsidian-vault) :to-be nil)
       (expect (obsidian--vault-cache) :to-be nil)))
+  (it "is detected for an obsidian project within a git project"
+        (let* ((tmp-dir (make-temp-file "obs" t))
+               (inner (expand-file-name "obs-vault" tmp-dir))
+               (default-directory inner))
+          (make-directory (expand-file-name ".git" tmp-dir))
+          (make-directory inner)
+          (make-directory (expand-file-name ".obsidian" inner))
+          (expect (car (project-current)) :to-be 'obsidian)
+          (expect (f-same-p (obsidian-vault) inner) :to-be t)))
   (describe "is detected for a VC project"
     (it "with a .obsidian marker"
       (let* ((git-dir (make-temp-file "obs" t))
@@ -75,6 +83,27 @@
         (make-directory (expand-file-name ".obsidian" git-dir))
         (expect (car (project-current)) :to-be 'obsidian)
         (expect (f-same-p (obsidian-vault) git-dir) :to-be t)))
+    (it "inside an obsidian project"
+        (let* ((tmp-dir (make-temp-file "obs" t))
+               (inner (expand-file-name "git-proj" tmp-dir))
+               (default-directory inner))
+          (make-directory (expand-file-name ".obsidian" tmp-dir))
+          (make-directory inner)
+          (make-directory (expand-file-name ".git" inner))
+          (expect (car (project-current)) :to-be 'obsidian)
+          (expect (f-same-p (obsidian-vault) tmp-dir) :to-be t)))
+    (it "regardless of order of project-find-functions"
+        (let* ((tmp-dir (make-temp-file "obs" t))
+               (inner (expand-file-name "git-proj" tmp-dir))
+               (default-directory inner)
+               (orig-hooks project-find-functions))
+          (setq project-find-functions (list 'project-try-vc))
+          (make-directory (expand-file-name ".obsidian" tmp-dir))
+          (make-directory inner)
+          (make-directory (expand-file-name ".git" inner))
+          (expect (car (project-current)) :to-be 'vc)
+          (expect (f-same-p (obsidian-vault) tmp-dir) :to-be t)
+          (setq project-find-functions orig-hooks)))
     (it "even when the project is not an obsidian project"
       (let* ((git-dir (make-temp-file "obs" t))
              (default-directory git-dir)
@@ -86,13 +115,12 @@
                      nil)
         (expect (car (project-current)) :not :to-be 'obsidian)
         (expect (f-same-p (obsidian-vault) git-dir) :to-be t)
-        (setq project-find-functions old-hook)
-        ))
-    (it "but not with a .obsidian marker"
+        (setq project-find-functions old-hook)))
+    (it "but not without a .obsidian marker"
       (let* ((git-dir (make-temp-file "obs" t))
              (default-directory git-dir))
         (make-directory (expand-file-name ".git" git-dir))
-        (expect  (obsidian-vault) :to-be nil)))))
+        (expect (obsidian-vault) :to-be nil)))))
 
 (describe "check ignore directories function"
   (it "obsidian-not-in-excluded-directory-p with a list of directories"
