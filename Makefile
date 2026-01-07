@@ -16,7 +16,7 @@ test:
 
 .PHONY: test-emacs28
 test-emacs28:
-	eldev docker 28 test
+	eldev docker silex/emacs:28-ci  test
 
 docs:
 	make -C doc all
