@@ -115,21 +115,6 @@ for `obsidian.el' is different than that of `markdown-mode'."
 
 (eval-when-compile (defvar local-minor-modes))
 
-(defun obsidian--directory-files-pre28
-    (orig-func dir &optional full match nosort _)
-  "Version of `directory-files' compatible with Emacs versions < 28.
-
-ORIG-FUNC is the original `directory-files' function that is going to be
-advised,and DIR and the directory of files on which `directory-files' will
-be called.
-FULL, MATCH, and NOSORT are the optional arguments for the `directory-files'
-function, while _ is the optional 4th argument used with newer versions
-of `dirctory-files'."
-  (apply orig-func dir full match nosort))
-
-(if (< emacs-major-version 28)
-    (advice-add 'directory-files :around #'obsidian--directory-files-pre28))
-
 
 (define-minor-mode obsidian-mode
   "Toggle minor `obsidian-mode' on and off.
