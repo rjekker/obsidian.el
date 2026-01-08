@@ -200,11 +200,12 @@ finding the vault is independent of having a project or not."
 
 (defun obsidian--init-vault-data (&optional vault-root)
   "Set (or reset) the data for VAULT-ROOT to a plist with values set to nil."
-  (when-let ((root (or vault-root (obsidian-vault))))
+  (if-let ((root (or vault-root (obsidian-vault))))
     (setf (alist-get root
                      obsidian--vault-alist
                      nil nil 'string=)
-          (list :cache nil :aliases nil :links nil :jump nil))))
+          (list :cache nil :aliases nil :links nil :jump nil))
+    (error "Try to init outside of obsidian vault")))
 
 
 (defun obsidian--get-vault-data (&optional vault-root)
@@ -222,10 +223,10 @@ in `obsidian--vault-alist' and return it."
 
 (defun obsidian--vault-cache (&optional vault-root)
   "Get the cache for VAULT-ROOT.
-
+``''
 If vault-root is nil, get cache for current buffer.
 If cache does not exist, one is created."
-  (let ((data (obsidian--get-vault-data vault-root)))
+  (when-let ((data (obsidian--get-vault-data vault-root)))
     (or (plist-get data :cache)
         (plist-get (plist-put data :cache (make-hash-table :test 'equal))
                    :cache))))
@@ -235,7 +236,7 @@ If cache does not exist, one is created."
 
 If vault-root is nil, get aliases cache for current buffer.
 If cache does not exist, one is created."
-  (let ((data (obsidian--get-vault-data vault-root)))
+  (when-let ((data (obsidian--get-vault-data vault-root)))
     (or (plist-get data :aliases)
         (plist-get (plist-put data :aliases (make-hash-table :test 'equal))
                    :aliases))))
@@ -617,15 +618,14 @@ If file is not specified, the current buffer will be used."
   "Create an empty cache and populate with files, tags, aliases, and links."
   (interactive)
   (let* ((obs-files (obsidian--files-on-disk))
-         (file-count (length obs-files))
-         )
+         (file-count (length obs-files)))
     ;; Clear existing metadata
     (obsidian--init-vault-data)
     (setq obsidian--backlinks-alist (make-hash-table :test 'equal))
     (setq obsidian--jump-list nil)
-    
+
     (seq-map (lambda (file)
-               (ht-set cache file (make-hash-table :test 'equal :size 3)))
+               (ht-set (obsidian--vault-cache) file (make-hash-table :test 'equal :size 3)))
              obs-files)
     ;; Repopulate metadata
     (dolist-with-progress-reporter

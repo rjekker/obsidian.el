@@ -84,8 +84,7 @@
                             :jump nil))))))
           (it "will not allow initializing with vault=nil"
               (let (obsidian--vault-alist)
-                (expect (obsidian--init-vault-data) :to-be nil)
-                (expect obsidian--vault-alist :to-be nil))))
+                (expect (obsidian--init-vault-data) :to-throw))))
 
 (describe "check vault location"
   (it "is correctly detected"
