@@ -165,12 +165,14 @@ characters of a tag.
 (defconst obsidian-markdown-link-regex "\\[[[:graph:][:blank:]]+\\]\([[:graph:][:blank:]]*\)"
   "Regex pattern used to find markdown links.")
 
-(defvar obsidian--vault-cache-alist nil
-  "Cache for Obsidian files.
+(defvar obsidian--vault-alist nil
+  "List of vaults with their data.
 
-We have a cache per obsidian vault, in an alist:
+Each alist element consists of the path to a vault
+and the corresponding data as a plist:
 
-((vault-root1 . cache1) (vault-root2 . cache2))
+ ((vault-root1 :cache cache1 :aliases aliases1)
+ (vault-root2 :cache cache2 :aliases aliases))
 
 Where the cache is a hashmap with the following structure
 {<filepath>: {tags: <list-of-tags>
@@ -187,27 +189,57 @@ Each link list contains the following as returned by markdown-link-at-pos:
   6. bang (nil or \"!\")")
 
 
-(defun obsidian--vault-cache (&optional vault)
-  "Get the cache for VAULT.
+(defun obsidian-vault ()
+  "Return vault directory for current buffer.
 
-If nil, get cache for current buffer."
-  (alist-get (or vault (obsidian-vault))
-             obsidian--vault-cache-alist
-             nil nil
-             'string=))
-
-
-(defun obsidian--init-vault-cache (file-count &optional vault)
-  "Create empty cache for VAULT."
-  (let ((cache (make-hash-table :test 'equal :size file-count)))
-    (setf (alist-get
-           (or vault (obsidian-vault))
-           obsidian--vault-cache-alist
-           nil nil 'string=)
-          cache)))
+Note how this does not use `project-current' at all;
+finding the vault is independent of having a project or not."
+  (when-let ((root (locate-dominating-file default-directory ".obsidian")))
+    (expand-file-name root)))
 
 
-(defvar obsidian--aliases-map (make-hash-table :test 'equal) "Hash table of all Obsidian aliases.")
+(defun obsidian--init-vault-data (&optional vault-root)
+  "Set (or reset) the data for VAULT-ROOT to a plist with values set to nil."
+  (when-let ((root (or vault-root (obsidian-vault))))
+    (setf (alist-get root
+                     obsidian--vault-alist
+                     nil nil 'string=)
+          (list :cache nil :aliases nil :links nil :jump nil))))
+
+
+(defun obsidian--get-vault-data (&optional vault-root)
+  "Get data plist for VAULT.
+
+If VAULT-ROOT is nil, use vault for current buffer.
+If no data is found, this will initialize a new plist
+in `obsidian--vault-alist' and return it."
+  (when-let ((root (or vault-root (obsidian-vault))))
+    (or (alist-get root
+                   obsidian--vault-alist
+                   nil nil 'string=)
+        (obsidian--init-vault-data root))))
+
+
+(defun obsidian--vault-cache (&optional vault-root)
+  "Get the cache for VAULT-ROOT.
+
+If vault-root is nil, get cache for current buffer.
+If cache does not exist, one is created."
+  (let ((data (obsidian--get-vault-data vault-root)))
+    (or (plist-get data :cache)
+        (plist-get (plist-put data :cache (make-hash-table :test 'equal))
+                   :cache))))
+
+(defun obsidian--vault-aliases (&optional vault-root)
+  "Get the aliases for VAULT-ROOT.
+
+If vault-root is nil, get aliases cache for current buffer.
+If cache does not exist, one is created."
+  (let ((data (obsidian--get-vault-data vault-root)))
+    (or (plist-get data :aliases)
+        (plist-get (plist-put data :aliases (make-hash-table :test 'equal))
+                   :aliases))))
+
 
 (defvar obsidian--backlinks-alist (make-hash-table :test 'equal) "Alist of backlinks.")
 
@@ -250,20 +282,20 @@ If nil, get cache for current buffer."
                file (s-join "\n" (hash-table-keys (obsidian--vault-cache)))))))
 
 (defun obsidian--add-alias (alias file)
-  "Add ALIAS as key to `obsidian--aliases-map' with FILE as value."
-  (puthash alias file obsidian--aliases-map))
+  "Add ALIAS as key to vault data with FILE as value."
+  (puthash alias file (obsidian--vault-aliases)))
 
 (defun obsidian--remove-alias (alias)
-  "Remove ALIAS as key to `obsidian--aliases-map'."
-  (remhash alias obsidian--aliases-map))
+  "Remove ALIAS as key to vault data."
+  (remhash alias (obsidian--vault-aliases)))
 
 (defun obsidian--get-alias (alias &optional default)
-  "Find ALIAS in `obsidian--aliases-map' with optional DEFAULT."
-  (gethash alias obsidian--aliases-map default))
+  "Find ALIAS in vault data with optional DEFAULT."
+  (gethash alias (obsidian--vault-aliases) default))
 
 (defun obsidian-aliases ()
   "Return all existing aliases (without values)."
-  (hash-table-keys obsidian--aliases-map))
+  (hash-table-keys (obsidian--vault-aliases)))
 
 (defun obsidian-user-directory-p (&optional file)
   "Return t if FILE is a user defined directory."
@@ -306,13 +338,6 @@ Will detect obsidian vault by the .obsidian folder."
   (nth 2 project))
 
 
-(defun obsidian-vault ()
-  "Return vault directory for current buffer.
-
-Note how this does not use `project-current' at all;
-finding the vault is independent of having a project or not."
-  (when-let ((root (locate-dominating-file default-directory ".obsidian")))
-    (expand-file-name root)))
 
 
 (defun obsidian-file-p (&optional file)
@@ -593,9 +618,9 @@ If file is not specified, the current buffer will be used."
   (interactive)
   (let* ((obs-files (obsidian--files-on-disk))
          (file-count (length obs-files))
-         (cache (obsidian--init-vault-cache file-count)))
+         )
     ;; Clear existing metadata
-    (setq obsidian--aliases-map (make-hash-table :test 'equal))
+    (obsidian--init-vault-data)
     (setq obsidian--backlinks-alist (make-hash-table :test 'equal))
     (setq obsidian--jump-list nil)
     
@@ -610,13 +635,13 @@ If file is not specified, the current buffer will be used."
     (message "Obsidian cache populated at %s with %d files"
              (format-time-string "%H:%M:%S") file-count)
     (setq obsidian--updated-time (float-time))
-    file-count))
+    file-count)
 
-(defun obsidian--updated-externally-p (file)
-  "Has FILE been modified by a process other than obsidian.el."
-  (let ((file-mod-time (float-time (nth 5 (file-attributes file)))))
-    ;; Has the file been modified more recently than obsidian--updated-time
-    (> file-mod-time obsidian--updated-time)))
+  (defun obsidian--updated-externally-p (file)
+    "Has FILE been modified by a process other than obsidian.el."
+    (let ((file-mod-time (float-time (nth 5 (file-attributes file)))))
+      ;; Has the file been modified more recently than obsidian--updated-time
+      (> file-mod-time obsidian--updated-time))))
 
 ;;;###autoload
 (defun obsidian-update ()
@@ -840,12 +865,12 @@ Note is created in the `obsidian-daily-notes-directory' if set, or in
       (user-error "Note not found: %s" choice))))
 
 (defun obsidian--mapped-aliases (file)
-  "Return list of aliases mapped to FILE in `obsidian--aliases-map'."
+  "Return list of aliases mapped to FILE in vault data."
   (let ((aliases '()))
     (maphash (lambda (k v)
                (when (equal file v)
                  (add-to-list 'aliases k)))
-             obsidian--aliases-map )
+             (obsidian--vault-aliases))
     aliases))
 
 (defun obsidian-add-file (file)

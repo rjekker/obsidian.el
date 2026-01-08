@@ -39,15 +39,53 @@
   (if (ht-get (obsidian--vault-cache) file) t))
 
 (defmacro obsidian-test--in-test-dir (&rest body)
-  `(let ((default-directory ,obsidian--test-dir))
+  `(let ((default-directory ,obsidian--test-dir)
+         (obsidian--vault-alist nil))
      ,@body))
 
 (defmacro obsidian-test--in-test-dir-with-cache (&rest body)
-  `(let ((default-directory ,obsidian--test-dir))
+  `(let ((default-directory ,obsidian--test-dir)
+         (obsidian--vault-alist nil))
      (obsidian-rescan-cache)
      ,@body))
 
-
+(describe "Per-vault data store"
+          (it "is lazily initialized"
+              (obsidian-test--in-test-dir
+               (expect (obsidian--get-vault-data) :to-equal
+                       '(:cache nil
+                                :aliases nil
+                                :links nil
+                                :jump nil))
+               (expect (length obsidian--vault-alist) :to-be 1)
+               (expect (caar obsidian--vault-alist) :to-equal default-directory)))
+          (it "with lazy cache init"
+              (obsidian-test--in-test-dir
+               (expect (hash-table-p (obsidian--vault-cache)) :to-be t)
+               (expect (length obsidian--vault-alist) :to-be 1)
+               (expect (caar obsidian--vault-alist) :to-equal default-directory)))
+          (it "with lazy aliases init"
+              (obsidian-test--in-test-dir
+               (expect (hash-table-p (obsidian--vault-aliases)) :to-be t)
+               (expect (length obsidian--vault-alist) :to-be 1)
+               (expect (caar obsidian--vault-alist) :to-equal default-directory)))
+          (it "can be re-initialized"
+              (obsidian-test--in-test-dir
+               (let ((_ (obsidian--vault-cache))
+                     (_ (obsidian--vault-aliases)))
+                 (obsidian--init-vault-data)
+                 (expect (length obsidian--vault-alist) :to-be 1)
+                 (expect obsidian--vault-alist
+                         :to-equal
+                         `((,default-directory
+                            :cache nil
+                            :aliases nil
+                            :links nil
+                            :jump nil))))))
+          (it "will not allow initializing with vault=nil"
+              (let (obsidian--vault-alist)
+                (expect (obsidian--init-vault-data) :to-be nil)
+                (expect obsidian--vault-alist :to-be nil))))
 
 (describe "check vault location"
   (it "is correctly detected"
@@ -144,7 +182,7 @@
       (setq obsidian-excluded-directories
             (list (f-join obsidian--test-dir "inbox")))
       (obsidian-rescan-cache)
-      
+
       (expect (length (ht-keys (obsidian--vault-cache)))
               :not :to-equal obsidian--test-number-of-visible-notes)
       (expect (length (ht-keys (obsidian--vault-cache)))
@@ -425,7 +463,7 @@ key4:
 (describe
     "Insert links for files that don't exist"
   (after-each (obsidian-test--delete-all-test-files))
-  
+
   (it "insert link from vault root when inbox setting is t"
     (obsidian-test--in-test-dir-with-cache
      (obsidian-test--jump-to-file "1.md")
@@ -506,8 +544,6 @@ key4:
          (expect (file-exists-p bad-path) :to-equal nil)
          (expect (file-exists-p bad-path-root) :to-equal nil))
         (setq obsidian-inbox-directory orig-inbox))
-     (kill-whole-line)))
-
-  )
+     (kill-whole-line))))
 
 (provide 'test-obsidian)
