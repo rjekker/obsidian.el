@@ -49,9 +49,6 @@
 
 (defgroup obsidian nil "Obsidian Notes group." :group 'text)
 
-(defvar obsidian--relative-path-length nil
-  "Length of path of `obisidan-directory' used to calculate file relative paths.")
-
 (defcustom obsidian-inbox-directory nil
   "Subdir to create notes using `obsidian-capture'."
   :type 'directory)
@@ -356,16 +353,8 @@ FILE is an obsidian file if:
     t))
 
 (defun obsidian-file-relative-name (f)
-  "Take file name F and return relative path for vault.
-
-The call to `substring' is much faster than a call to `file-relative-name',
-and as the DIRECTORY argument of `file-relative-name' is always the constant
-`', the use of `substring' with the FROM argument set to the
-string length of `(obsidian-vault)' should be equivalent, as long as F is
-always a full absolute path."
-  (if (s-starts-with-p (obsidian-vault) f)
-      (substring f obsidian--relative-path-length)
-    f))
+  "Take file name F and return relative path for vault."
+  (f-relative f (obsidian-vault)))
 
 (defun obsidian-expand-file-name (f)
   "Take file F relative to vault and return absolute path."
