@@ -18,6 +18,10 @@ test:
 test-emacs28:
 	eldev docker silex/emacs:28-ci  test
 
+.PHONY: test-emacs29
+test-emacs29:
+	eldev docker silex/emacs:29-ci  test
+
 docs:
 	make -C doc all
 

@@ -179,6 +179,8 @@ Where the cache is a hashmap with the following structure
               aliases: <list-of-aliases>}}
               links: <list-of-link-lists>}}
 
+These are the tags, aliases and links per file.
+
 Each link list contains the following as returned by markdown-link-at-pos:
   0. beginning position
   1. end position
@@ -205,7 +207,7 @@ finding the vault is independent of having a project or not."
                      obsidian--vault-alist
                      nil nil 'string=)
           (list :cache nil :aliases nil :links nil :jump nil))
-    (error "Try to init outside of obsidian vault")))
+    (error "Cannot init vault data outside of obsidian vault")))
 
 
 (defun obsidian--get-vault-data (&optional vault-root)
@@ -240,7 +242,6 @@ If cache does not exist, one is created."
     (or (plist-get data :aliases)
         (plist-get (plist-put data :aliases (make-hash-table :test 'equal))
                    :aliases))))
-
 
 (defvar obsidian--backlinks-alist (make-hash-table :test 'equal) "Alist of backlinks.")
 
@@ -296,7 +297,8 @@ If cache does not exist, one is created."
 
 (defun obsidian-aliases ()
   "Return all existing aliases (without values)."
-  (hash-table-keys (obsidian--vault-aliases)))
+  (when-let ((aliases (obsidian--vault-aliases)))
+    (hash-table-keys aliases)))
 
 (defun obsidian-user-directory-p (&optional file)
   "Return t if FILE is a user defined directory."
@@ -327,9 +329,12 @@ If cache does not exist, one is created."
 
 
 (defun obsidian-try-project (dir)
-  "Project.el integration for obsidian.
+  "Project.el integration for obsidian: try to find project for DIR.
 
-Will detect obsidian vault by the .obsidian folder."
+Will detect obsidian vault by the .obsidian folder.
+Note: this is NOT used to set the vault location, or initialize
+vault data. It's just so we can find obsidian projects for
+use with project.el."
   (when-let ((root (locate-dominating-file dir ".obsidian")))
     `(obsidian obsidian ,root)))
 
@@ -337,8 +342,6 @@ Will detect obsidian vault by the .obsidian folder."
 (cl-defmethod project-root ((project (head obsidian)))
   "Return root folder for PROJECT."
   (nth 2 project))
-
-
 
 
 (defun obsidian-file-p (&optional file)
