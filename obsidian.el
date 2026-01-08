@@ -222,28 +222,27 @@ in `obsidian--vault-alist' and return it."
                    nil nil 'string=)
         (obsidian--init-vault-data root))))
 
+(defun obsidian--vault-init-hash (prop &optional vault-root)
+  "Initialize hash property PROP in data for VAULT-ROOT."
+  (when-let ((data (obsidian--get-vault-data vault-root)))
+    (or (plist-get data prop)
+        (plist-get (plist-put data prop (make-hash-table :test 'equal))
+                   prop))))
+
 
 (defun obsidian--vault-cache (&optional vault-root)
   "Get the cache for VAULT-ROOT.
 ``''
 If vault-root is nil, get cache for current buffer.
 If cache does not exist, one is created."
-  (when-let ((data (obsidian--get-vault-data vault-root)))
-    (or (plist-get data :cache)
-        (plist-get (plist-put data :cache (make-hash-table :test 'equal))
-                   :cache))))
+  (obsidian--vault-init-hash :cache vault-root))
 
 (defun obsidian--vault-aliases (&optional vault-root)
   "Get the aliases for VAULT-ROOT.
 
 If vault-root is nil, get aliases cache for current buffer.
 If cache does not exist, one is created."
-  (when-let ((data (obsidian--get-vault-data vault-root)))
-    (or (plist-get data :aliases)
-        (plist-get (plist-put data :aliases (make-hash-table :test 'equal))
-                   :aliases))))
-
-(defvar obsidian--backlinks-alist (make-hash-table :test 'equal) "Alist of backlinks.")
+  (obsidian--vault-init-hash :aliases vault-root))
 
 (defvar obsidian--jump-list nil "List of buffer locations visited via jump.")
 
@@ -624,7 +623,6 @@ If file is not specified, the current buffer will be used."
          (file-count (length obs-files)))
     ;; Clear existing metadata
     (obsidian--init-vault-data)
-    (setq obsidian--backlinks-alist (make-hash-table :test 'equal))
     (setq obsidian--jump-list nil)
 
     (seq-map (lambda (file)
