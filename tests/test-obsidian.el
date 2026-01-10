@@ -242,6 +242,71 @@ set var `vault' to test vault"
                (expect (length (obsidian--directories vault)) :to-equal
                        obsidian--test-number-of-visible-directories))))
 
+(describe "updating the vault"
+          (it "adds new file"
+              (obsidian-test--in-temp-vault
+               (obsidian-rescan-cache vault)
+               (find-file "test.md")
+               (insert "testing #test")
+               (write-file "test.md")
+               (obsidian-update)
+               (expect (obsidian--files vault) :to-equal (list buffer-file-name))
+               (expect (obsidian--tags vault) :to-equal '("test"))))
+          (it "removes deleted file"
+              (obsidian-test--in-temp-vault
+               (find-file "test.md")
+               (insert "testing #test")
+               (write-file "test.md")
+               (obsidian-rescan-cache vault)
+               (expect (obsidian--files vault) :to-equal (list buffer-file-name))
+               (expect (obsidian--tags vault) :to-equal '("test"))
+               (delete-file "test.md")
+               (obsidian-update)
+               (expect (obsidian--files vault) :to-be nil)
+               (expect (obsidian--tags vault) :to-be nil)))
+          (it "rescans changed file"
+              (obsidian-test--in-temp-vault
+               (find-file "test.md")
+               (insert "testing #test\n")
+               (write-file "test.md")
+               (obsidian-rescan-cache vault)
+               (expect (obsidian--files vault) :to-equal (list buffer-file-name))
+               (expect (obsidian--tags vault) :to-equal '("test"))
+               (insert "testing #test2")
+               (write-file "test.md")
+               (obsidian-update)
+               (expect (obsidian--files vault) :to-equal (list buffer-file-name))
+               (expect (obsidian--tags vault) :to-equal '("test" "test2"))))
+          (it "detects externally added file"
+              (obsidian-test--in-temp-vault
+               (shell-command "echo 'external #ext' > test.md")
+               (let ((new-file (f-join vault "test.md")))
+                 (expect (obsidian--updated-externally-p new-file) :to-be t)
+                 (obsidian-rescan-cache vault)
+                 (expect (obsidian--files vault) :to-equal (list new-file))
+                 (expect (obsidian--tags vault) :to-equal '("ext")))))
+          (it "detects externally changed file"
+              (obsidian-test--in-temp-vault
+               (find-file "test.md")
+               (insert "testing #test\n")
+               (write-file "test.md")
+               (shell-command "echo 'external #ext' >> test.md")
+               (let ((file (f-join vault "test.md")))
+                 (expect (obsidian--updated-externally-p file) :to-be t)
+                 (obsidian-rescan-cache vault)
+                 (expect (obsidian--files vault) :to-equal (list file))
+                 (expect (obsidian--tags vault) :to-equal '("test" "ext")))))
+          (it "detects externally deleted file"
+              (obsidian-test--in-temp-vault
+               (find-file "test.md")
+               (insert "testing #test\n")
+               (write-file "test.md")
+               (kill-buffer)
+               (shell-command "rm test.md")
+               (obsidian-rescan-cache vault)
+               (expect (obsidian--files vault) :to-be nil)
+               (expect (obsidian--tags vault) :to-be nil))))
+
 (describe "obsidian-remove-front-matter-front-string"
           (it "Remove front matter from string"
               (expect (obsidian-remove-front-matter-from-string "---\ntags: [foo]\n---\none\ntwo")
@@ -311,11 +376,13 @@ key4:
           (it "check that front-matter is found"
               (expect (->> obsidian--test-correct-front-matter
                            obsidian-find-yaml-front-matter-in-string
-                           (gethash 'aliases)) :to-equal ["AI" "Artificial Intelligence"]))
+                           (gethash 'aliases))
+                      :to-equal ["AI" "Artificial Intelligence"]))
 
           (it "check that front-matter is ignored if not at the top of file"
               (expect (obsidian-find-yaml-front-matter-in-string
-                       obsidian--test-incorrect-front-matter--not-start-of-file) :to-equal nil))
+                       obsidian--test-incorrect-front-matter--not-start-of-file)
+                      :to-equal nil))
 
           (it "check that front-matter in vault is correct"
               (obsidian-test--in-test-vault-with-cache
@@ -461,8 +528,8 @@ key4:
                    (obsidian-follow-markdown-link-at-point)
                    (expect (length obsidian--jump-list) :to-be 1)
                    (expect (buffer-file-name (marker-buffer
-                                             (car obsidian--jump-list))) :to-equal
-                           (obsidian-file-to-absolute-path "1.md" vault)))))))
+                                              (car obsidian--jump-list))) :to-equal
+                                              (obsidian-file-to-absolute-path "1.md" vault)))))))
 
 (describe "obsidian-jump"
           (it "opens a file in buffer"

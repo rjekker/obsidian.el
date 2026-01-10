@@ -115,7 +115,6 @@ for `obsidian.el' is different than that of `markdown-mode'."
 
 (eval-when-compile (defvar local-minor-modes))
 
-
 (define-minor-mode obsidian-mode
   "Toggle minor `obsidian-mode' on and off.
 
@@ -630,13 +629,13 @@ If file is not specified, the current buffer will be used."
     (message "Obsidian cache populated at %s with %d files"
              (format-time-string "%H:%M:%S") file-count)
     (setq obsidian--updated-time (float-time))
-    file-count)
+    file-count))
 
-  (defun obsidian--updated-externally-p (file)
-    "Has FILE been modified by a process other than obsidian.el."
-    (let ((file-mod-time (float-time (nth 5 (file-attributes file)))))
-      ;; Has the file been modified more recently than obsidian--updated-time
-      (> file-mod-time obsidian--updated-time))))
+(defun obsidian--updated-externally-p (file)
+  "Has FILE been modified by a process other than obsidian.el."
+  (let ((file-mod-time (float-time (nth 5 (file-attributes file)))))
+    ;; Has the file been modified more recently than obsidian--updated-time
+    (> file-mod-time obsidian--updated-time)))
 
 (defun obsidian--update-vault-data (vault)
   "Update data for VAULT.
@@ -648,7 +647,7 @@ show more recent modified times if they called `obsidian--update-on-save'
 that was triggered by the `after-save-hook'.  We have no way to distinguish
 this from a file modified outside of obsidian.el, so we'll re-process
 them all just in case."
-    (if (not (obsidian--vault-cache vault))
+  (if (not (obsidian--vault-cache vault))
       (obsidian-rescan-cache vault)
     (-let* ((cached (obsidian--files vault))
             (ondisk (obsidian--files-on-disk vault))
@@ -1392,35 +1391,35 @@ FILE is the full path to an obsidian file."
 The backlinks buffer will not be updated if it's already showing the
 backlinks for the current buffer unless FORCE is non-nil."
   (unless (and (obsidian-file-backlinks-displayed-p) (not force))
-    (when (and obsidian-mode (obsidian--get-local-backlinks-window) (obsidian-file-p))
-      (let* ((file-path (buffer-file-name))
-             (vault (obsidian-vault))
-             (vault-path (file-relative-name file-path vault))
-             (backlinks (obsidian-backlinks file-path vault))
-             (file-str (if obsidian-backlinks-show-vault-path
-                           vault-path
-                         (file-name-base file-path))))
-        (with-current-buffer (get-buffer obsidian-backlinks-buffer-name)
-          (erase-buffer)
-          (visual-line-mode t)
-          ;; Insert filename
-          (insert (propertize (format "# %s\n" file-str)
-                              'face 'markdown-header-face
-                              'obsidian-mru-file file-path))
-          ;; Insert separator
-          (insert (propertize
-                   (format "%s\n" (make-string (- obsidian-backlinks-panel-width 2) ?-))
-                   'face 'markdown-hr-face))
-          ;; Insert backlinks
-          (maphash 'obsidian--link-with-props backlinks)
-          ;; Allows for using keybindings for obsidian-open-link
-          (obsidian-mode t)
-          ;; Put cursor on the line of the first link
-          (goto-char (point-min))
-          (forward-line 2)
-          (set-window-point
-           (get-buffer-window obsidian-backlinks-buffer-name)
-           (point)))))))
+          (when (and obsidian-mode (obsidian--get-local-backlinks-window) (obsidian-file-p))
+            (let* ((file-path (buffer-file-name))
+                   (vault (obsidian-vault))
+                   (vault-path (file-relative-name file-path vault))
+                   (backlinks (obsidian-backlinks file-path vault))
+                   (file-str (if obsidian-backlinks-show-vault-path
+                                 vault-path
+                               (file-name-base file-path))))
+              (with-current-buffer (get-buffer obsidian-backlinks-buffer-name)
+                (erase-buffer)
+                (visual-line-mode t)
+                ;; Insert filename
+                (insert (propertize (format "# %s\n" file-str)
+                                    'face 'markdown-header-face
+                                    'obsidian-mru-file file-path))
+                ;; Insert separator
+                (insert (propertize
+                         (format "%s\n" (make-string (- obsidian-backlinks-panel-width 2) ?-))
+                         'face 'markdown-hr-face))
+                ;; Insert backlinks
+                (maphash 'obsidian--link-with-props backlinks)
+                ;; Allows for using keybindings for obsidian-open-link
+                (obsidian-mode t)
+                ;; Put cursor on the line of the first link
+                (goto-char (point-min))
+                (forward-line 2)
+                (set-window-point
+                 (get-buffer-window obsidian-backlinks-buffer-name)
+                 (point)))))))
 
 ;;
 ;; Mode Configuration
