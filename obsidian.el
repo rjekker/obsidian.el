@@ -206,7 +206,7 @@ finding the vault is independent of having a project or not."
     (setf (alist-get root
                      obsidian--vault-alist
                      nil nil 'string=)
-          (list :cache nil :aliases nil :links nil :jump nil))
+          (list :cache nil :aliases nil))
     (error "Cannot init vault data outside of obsidian vault")))
 
 
@@ -222,6 +222,7 @@ in `obsidian--vault-alist' and return it."
                    nil nil 'string=)
         (obsidian--init-vault-data root))))
 
+
 (defun obsidian--vault-init-hash (prop &optional vault-root)
   "Initialize hash property PROP in data for VAULT-ROOT."
   (when-let ((data (obsidian--get-vault-data vault-root)))
@@ -236,6 +237,7 @@ in `obsidian--vault-alist' and return it."
 If vault-root is nil, get cache for current buffer.
 If cache does not exist, one is created."
   (obsidian--vault-init-hash :cache vault-root))
+
 
 (defun obsidian--vault-aliases (&optional vault-root)
   "Get the aliases for VAULT-ROOT.
@@ -386,8 +388,8 @@ found is returned.  If no matches are found, the original FILE is returned."
 
 (defun obsidian-files ()
   "Lists all Obsidian Notes files that are not in trash."
-  (when (obsidian--vault-cache)
-    (hash-table-keys (obsidian--vault-cache))))
+  (when-let ((cache (obsidian--vault-cache)))
+    (hash-table-keys cache)))
 
 (defun obsidian-directories ()
   "Lists all Obsidian sub folders."
@@ -616,7 +618,7 @@ If file is not specified, the current buffer will be used."
     (when (obsidian-file-p file)
       (obsidian-add-file file))))
 
-(defun obsidian-rescan-cache ()
+(defun obsidian-rescan-cache (&optional vault)
   "Create an empty cache and populate with files, tags, aliases, and links."
   (interactive)
   (let* ((obs-files (obsidian--files-on-disk))

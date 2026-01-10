@@ -53,10 +53,7 @@
           (it "is lazily initialized"
               (obsidian-test--in-test-dir
                (expect (obsidian--get-vault-data) :to-equal
-                       '(:cache nil
-                                :aliases nil
-                                :links nil
-                                :jump nil))
+                       '(:cache nil :aliases nil))
                (expect (length obsidian--vault-alist) :to-be 1)
                (expect (caar obsidian--vault-alist) :to-equal default-directory)))
           (it "with lazy cache init"
@@ -78,10 +75,7 @@
                  (expect obsidian--vault-alist
                          :to-equal
                          `((,default-directory
-                            :cache nil
-                            :aliases nil
-                            :links nil
-                            :jump nil))))))
+                            :cache nil :aliases nil))))))
           (it "will not allow initializing with vault=nil"
               (let (obsidian--vault-alist)
                 (expect (obsidian--init-vault-data) :to-throw))))
