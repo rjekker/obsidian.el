@@ -964,11 +964,12 @@ vault root."
 
 If ARG is set, the file will be opened in other window."
   (when-let ((vault (obsidian-vault)))
-    (let* ((all-files (seq-map #'obsidian-file-relative-name (obsidian--files vault)))
+    (let* ((all-files (seq-map (lambda (f) (file-relative-name f vault))
+                               (obsidian--files vault)))
            (matches (obsidian--match-files f all-files))
            (file (cl-case (length matches)
                    (0 (obsidian--prepare-new-file-from-rel-path
-                       (obsidian--prepare-rel-path f) vault))
+                       (obsidian--prepare-rel-path f vault) vault))
                    (1 (car matches))
                    (t
                     (let ((choice (completing-read "Jump to: " matches)))
@@ -983,7 +984,7 @@ If ARG is set, the file will be opened in other window."
   (obsidian-find-file f arg)
   (goto-char p))
 
-(defun obsidian--prepare-rel-path (f)
+(defun obsidian--prepare-rel-path (f vault)
   "Return relative path for creating new file F.
 
 If `/' in F, return F. Else, if `obsidian-inbox-directory' is set and
@@ -997,7 +998,7 @@ Otherwise, retrun path in same directory as current buffer."
       ;; Return relative path of input file in current directory
       (-> (buffer-file-name)
           file-name-directory
-          obsidian-file-relative-name
+          (lambda (f) (file-relative-name f vault))
           (concat f)))))
 
 (defun obsidian-find-wiki-links (last)
@@ -1148,7 +1149,8 @@ Template vars: {{title}}, {{date}}, and {{time}}"
          (-flatten
           (ht-map (lambda (k1 v1)
                     (seq-map (lambda (v2)
-                               (cons (obsidian-file-relative-name k1) (nth 2 v2)))
+                               (cons (file-relative-name k1 (obsidian-vault))
+                                     (nth 2 v2)))
                              v1))
                   hmap))))
     (completing-read
@@ -1362,7 +1364,7 @@ by `markdown-link-at-pos'."
                              (s-contains-p ":" k))
                          k)
                         (obsidian-backlinks-show-vault-path
-                         (obsidian-file-relative-name k))
+                         (file-relative-name k (obsidian-vault)))
                         (t
                          (file-name-nondirectory k)))))
     (insert (propertize (format "%s\n" filename)
@@ -1389,11 +1391,12 @@ FILE is the full path to an obsidian file."
 
 The backlinks buffer will not be updated if it's already showing the
 backlinks for the current buffer unless FORCE is non-nil."
-  (unless (and (obsidian-file-backlinks-displayed-p) (not force))
+  (unless (and (obsidian-file-backlinks-displayed-p) (not force))
     (when (and obsidian-mode (obsidian--get-local-backlinks-window) (obsidian-file-p))
       (let* ((file-path (buffer-file-name))
-             (vault-path (obsidian-file-relative-name file-path))
-             (backlinks (obsidian-backlinks file-path))
+             (vault (obsidian-vault))
+             (vault-path (file-relative-name file-path vault))
+             (backlinks (obsidian-backlinks file-path vault))
              (file-str (if obsidian-backlinks-show-vault-path
                            vault-path
                          (file-name-base file-path))))
@@ -1477,7 +1480,7 @@ in the linked file."
                   #'obsidian-close-all-backlinks-panels)))))
 
 
-(defun obsidian-backlinks (&optional file vault)
+(defun obsidian-backlinks (file vault)
   "Return a hashtable of backlinks to absolute path FILE in VAULT.
 
 The variables used for retrieving links are as follows:

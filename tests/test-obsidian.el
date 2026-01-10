@@ -442,13 +442,35 @@ key4:
                       (count (obsidian-test--backlinks-count file vault)))
                  (expect count :to-equal 3)))))
 
+(describe "following a link"
+          (it "makes you end up in the target file"
+              (obsidian-test--in-test-vault-with-cache
+               (save-excursion
+                 (find-file "1.md")
+                 (goto-char (point-min))
+                 (search-forward "[2-sub]")
+                 (obsidian-follow-markdown-link-at-point)
+                 (expect (file-name-nondirectory buffer-file-name) :to-equal "2-sub.md"))))
+          (it "adds the original buffer to the jump list"
+              (obsidian-test--in-test-vault-with-cache
+               (let ((obsidian--jump-list nil))
+                 (save-excursion
+                   (find-file "1.md")
+                   (goto-char (point-min))
+                   (search-forward "[2-sub]")
+                   (obsidian-follow-markdown-link-at-point)
+                   (expect (length obsidian--jump-list) :to-be 1)
+                   (expect (buffer-file-name (marker-buffer
+                                             (car obsidian--jump-list))) :to-equal
+                           (obsidian-file-to-absolute-path "1.md" vault)))))))
+
 (describe "obsidian-jump"
-  (it "opens a file in buffer"
-    (obsidian-test--in-test-vault-with-cache
-     (let ((executing-kbd-macro t)
-           (unread-command-events (listify-key-sequence "subdir/aliases.md\n")))
-       (call-interactively #'obsidian-jump))
-     (expect (buffer-file-name) :to-equal (f-join obsidian--test-dir "subdir/aliases.md")))))
+          (it "opens a file in buffer"
+              (obsidian-test--in-test-vault-with-cache
+               (let ((executing-kbd-macro t)
+                     (unread-command-events (listify-key-sequence "subdir/aliases.md\n")))
+                 (call-interactively #'obsidian-jump))
+               (expect (buffer-file-name) :to-equal (f-join obsidian--test-dir "subdir/aliases.md")))))
 
 (describe "obsidian-move-file"
           (let ((orig-file-name
